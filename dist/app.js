@@ -17,6 +17,10 @@ function message(text) {
   status.hidden = false;
 }
 function showStudent(student) {
+  if (student.interface === 'C') {
+    location.assign('/learn/c');
+    return;
+  }
   form.hidden = true;
   authenticated.hidden = false;
   password.value = '';
