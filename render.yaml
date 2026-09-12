@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: student-ai-learning
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT --workers 1 --no-access-log
+    healthCheckPath: /healthz
+    envVars:
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"

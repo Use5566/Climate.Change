@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="學生自主學習平台身分確認">
+<title>身分確認｜自主學習室</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e49cf'/%3E%3Cpath d='M9 9h6v14H9zm8 0h6v14h-6z' fill='white'/%3E%3C/svg%3E">
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","Microsoft JhengHei",sans-serif;color:#172b4b;background:#f0f5fc;font-size:16px}*{box-sizing:border-box}body{margin:0}main{min-height:100svh;display:grid;grid-template-columns:40% 60%}.intro{background:#1945c4;color:#fff;padding:clamp(32px,5vw,76px);display:flex;flex-direction:column;justify-content:space-between;gap:40px}.brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:19px}.mark{display:grid;place-items:center;width:40px;height:40px;border:1px solid #ffffff60;border-radius:12px;font-size:24px}.eyebrow{font-size:15px;letter-spacing:.15em;color:#d5e4ff;margin:0 0 18px}.intro h1{font-size:clamp(36px,4.5vw,64px);line-height:1.3;letter-spacing:.02em;margin:0 0 24px}.intro p.description{max-width:320px;font-size:18px;line-height:1.9;color:#e4edff}.step{font-size:15px;color:#dfebff;display:flex;gap:16px;align-items:center}.step span{height:3px;width:48px;background:#aaccff}.form-side{padding:36px clamp(28px,6vw,90px);display:flex;align-items:center;justify-content:center;position:relative}.panel{width:100%;max-width:620px}.tag{display:inline-block;background:#e0eafa;color:#28519d;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:600}.panel h2{font-size:32px;line-height:1.4;margin:22px 0 10px}.hint{line-height:1.8;color:#596a83;margin:0 0 30px}.row{display:grid;grid-template-columns:1fr 1fr;gap:20px}.field{display:flex;flex-direction:column;gap:10px;margin-bottom:24px}label{font-size:17px;font-weight:650}select,input{font:inherit;font-size:18px;color:#172b4b;background:#fff;border:1px solid #a9b9cf;border-radius:12px;min-height:60px;width:100%;padding:15px 16px}select{cursor:pointer}input::placeholder{color:#758298}input:focus,select:focus{outline:3px solid #b6ccff;border-color:#1945c4}button{width:100%;min-height:62px;border:0;border-radius:12px;background:#1945c4;color:white;font:inherit;font-size:19px;font-weight:700;cursor:pointer;transition:background .15s}button:hover{background:#1339a7}button:focus-visible{outline:3px solid #719cff;outline-offset:4px}.message{line-height:1.7;margin:16px 0 0;padding:14px 16px;background:#e4ecfa;border-radius:10px;color:#274777}.message[hidden]{display:none}.preview{font-size:14px;color:#63748d;line-height:1.7;border-top:1px solid #d5deeb;margin:28px 0 0;padding-top:18px}@media(max-width:700px){main{grid-template-columns:1fr}.intro{padding:24px;gap:28px}.intro h1{font-size:32px;margin-bottom:10px}.intro p.description{margin:0;max-width:none;font-size:16px}.eyebrow,.step{display:none}.form-side{padding:32px 24px}.panel h2{font-size:28px}.row{gap:14px}}@media(max-width:360px){.row{grid-template-columns:1fr;gap:0}}@media(max-height:650px) and (min-width:701px){.intro{padding:30px}.form-side{padding-top:24px;padding-bottom:24px}.panel h2{margin-top:14px}.hint{margin-bottom:20px}.field{margin-bottom:18px}.preview{margin-top:20px}}
+</style>
+</head>
+<body>
+<main>
+ <section class="intro" aria-label="自主學習室">
+  <div class="brand"><span class="mark" aria-hidden="true">✦</span>自主學習室</div>
+  <div><p class="eyebrow">READY TO LEARN</p><h1>從好奇開始，<br>一步步學會。</h1><p class="description">準備好了嗎？<br>先確認你的資料，再開始今天的學習。</p></div>
+  <div class="step"><span aria-hidden="true"></span>第一步・確認身分</div>
+ </section>
+ <section class="form-side" aria-labelledby="form-title">
+  <div class="panel">
+   <span class="tag">六年級・自主學習</span>
+   <h2 id="form-title">你好，歡迎來學習！</h2>
+   <p class="hint">請選擇班級、座號，並輸入老師給你的數字密碼。</p>
+   <form id="identity-form">
+    <div class="row">
+     <div class="field"><label for="classroom">班級</label><select id="classroom" name="classroom" required><option value="" disabled selected>請選擇班級</option></select></div>
+     <div class="field"><label for="seat">座號</label><select id="seat" name="seat" required><option value="" disabled selected>請選擇座號</option></select></div>
+    </div>
+    <div class="field"><label for="student-password">五位數密碼</label><input id="student-password" name="password" type="password" inputmode="numeric" pattern="[0-9]{5}" minlength="5" maxlength="5" title="請輸入老師提供的五位數字密碼" placeholder="請輸入五位數字密碼" autocomplete="current-password" required></div>
+    <button type="submit">確認身分，進入學習</button>
+    <p id="status" class="message" role="status" aria-live="polite" hidden></p>
+   </form>
+   <section id="authenticated" hidden aria-live="polite">
+    <h3>身分確認成功</h3>
+    <p id="student-info" class="hint"></p>
+    <p id="assignment-info" class="message"></p>
+    <button type="button" id="logout" style="margin-top:24px">登出，返回身分確認</button>
+   </section>
+   <p class="preview">登入測試版｜請使用老師提供的密碼，學習內容尚未開放。</p>
+  </div>
+ </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
