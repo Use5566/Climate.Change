@@ -1,4 +1,4 @@
-import {toggleRanges, isCovered, excerpt} from '/highlights.js';
+import {toggleRanges, isCovered, excerpt, installInferenceCopyGuard, highlightsWithinLimit} from '/highlights.js';
 const group = location.pathname.split('/').pop();
 const $ = selector => document.querySelector(selector);
 const views = {stance:$('#stance-view'), reading:$('#reading-view'), summary:$('#summary-view'), complete:$('#complete-view')};
@@ -49,6 +49,8 @@ function changed() {
   timer = setTimeout(() => save().catch(() => {}), 600);
 }
 function show(stage, focus = true) {
+  document.body.classList.toggle('inference-copy-locked', stage === 'summary');
+  if (stage === 'summary') window.getSelection()?.removeAllRanges();
   for (const [key, view] of Object.entries(views)) view.hidden = key !== stage;
   document.querySelectorAll('[data-step]').forEach(item => {
     if (item.dataset.step === (stage === 'complete' ? 'summary' : stage)) item.setAttribute('aria-current','step');
@@ -126,7 +128,13 @@ document.addEventListener('selectionchange',captureSelection);
 $('#toggle-highlight').addEventListener('pointerdown',e => { e.preventDefault(); });
 $('#toggle-highlight').addEventListener('click',() => {
   if (!selected.length) return;
-  work.highlights=toggleRanges(work.highlights,selected);
+  const next = toggleRanges(work.highlights,selected);
+  if (!isCovered(work.highlights,selected) && !highlightsWithinLimit(next,article.paragraphs)) {
+    error('每段劃記最多 30 字（不含標點與空白），請縮短選取範圍。');
+    return;
+  }
+  error('');
+  work.highlights=next;
   window.getSelection()?.removeAllRanges();
   renderArticle(); changed();
 });
@@ -253,4 +261,5 @@ async function checkSync() {
   } finally { syncChecking = false; }
 }
 setInterval(checkSync, 5000);
+installInferenceCopyGuard(() => !views.summary.hidden);
 load().then(checkSync);

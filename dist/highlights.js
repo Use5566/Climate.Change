@@ -26,3 +26,21 @@ export function toggleRanges(highlights, selection) {
   return result;
 }
 export function excerpt(text, start, end) { return Array.from(text).slice(start,end).join(''); }
+
+export function highlightLength(text) { return Array.from(text.replace(/[\p{P}\s]/gu, '')).length; }
+export function highlightsWithinLimit(ranges, paragraphs) {
+  return mergeRanges(ranges).every(h => highlightLength(excerpt(paragraphs[h.p].text, h.start, h.end)) <= 30);
+}
+
+export function installInferenceCopyGuard(isActive) {
+  for (const type of ['copy', 'cut', 'dragstart', 'contextmenu']) {
+    document.addEventListener(type, event => {
+      if (isActive()) event.preventDefault();
+    }, true);
+  }
+  document.addEventListener('keydown', event => {
+    if (isActive() && (event.ctrlKey || event.metaKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
+      event.preventDefault();
+    }
+  }, true);
+}

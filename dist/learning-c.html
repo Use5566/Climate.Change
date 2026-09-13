@@ -20,12 +20,13 @@
     </section>
     <section id="reading-view" hidden aria-labelledby="reading-title">
       <div class="reading-tools"><div><span class="eyebrow">文章閱讀</span><h1 id="reading-title" tabindex="-1">閱讀文章</h1></div><span class="stance-chip"></span></div>
-      <div class="selection-tools"><p id="selection-hint">拖曳選取文字；iPad 可長按文字，再調整選取範圍。</p><button id="toggle-highlight" class="small" disabled>先選取文章文字</button><span id="highlight-count">已劃記 0 段</span></div>
+      <div class="selection-tools"><p id="selection-hint">每段最多 30 字，不含標點與空白。拖曳選字；iPad 可長按調整範圍。</p><button id="toggle-highlight" class="small" disabled>先選取文章文字</button><span id="highlight-count">已劃記 0 段</span></div>
       <article id="article" aria-label="閱讀文章內容"></article>
       <footer class="reading-footer"><span>選到已劃記的文字，可取消該範圍的劃記。</span><button id="reading-done">閱讀完畢</button></footer>
     </section>
     <section id="summary-view" class="summary-view" hidden aria-labelledby="summary-title">
       <div class="section-heading"><div><p class="eyebrow">整理我的想法</p><h1 id="summary-title" tabindex="-1">摘要與推論</h1></div><button id="back-reading" class="secondary small">返回文章調整劃記</button></div>
+      <p class="muted">請用自己的話撰寫推論。本頁不提供複製、剪下或拖曳複製。</p>
       <section class="summary-block"><h2>我的立場</h2><span class="stance-chip"></span></section>
       <section class="summary-block"><h2>我的摘要</h2><p class="muted">依文章順序，整理你劃記的文字。</p><ol id="summary-list"></ol><p id="empty-summary" class="muted" hidden>你還沒有劃記文字，可以返回文章補充。</p></section>
       <form id="inference-form"><label for="inference">推論</label><textarea id="inference" rows="7" maxlength="10000" required placeholder="請寫下你的推論。"></textarea><div class="submit-row"><span class="muted">提交後，這次的學習紀錄將保存。</span><button id="submit-work" type="submit">提交</button></div></form>

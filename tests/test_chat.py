@@ -128,3 +128,14 @@ def test_ai_blocked_response_is_not_saved_as_answer(monkeypatch):
     monkeypatch.setattr('backend.chat.requests.post',lambda *args,**kwargs:Response())
     with pytest.raises(ChatUnavailable):
         Gemini().reply('A','支持',[])
+@pytest.mark.parametrize('group', ['A', 'B'])
+def test_chat_store_rejects_overlong_highlights(group):
+    from backend.learning import InvalidWork
+    store = MemorySheet()
+    store.validator = validate_chat
+    data = {'article_id': f'chat-{group.lower()}-v1', 'stance': '支持', 'stage': 'reading',
+            'inference': '', 'revision': 0, 'messages': [{'role': 'user', 'text': '甲' * 31}],
+            'highlights': [{'p': 0, 'start': 0, 'end': 31}]}
+    with pytest.raises(InvalidWork, match='30'):
+        store.save('601', '01', data)
+    assert store.rows == []

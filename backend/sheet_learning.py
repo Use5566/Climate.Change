@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
 from .article import ARTICLE_ID
-from .learning import validated, InvalidWork, Conflict
+from .learning import validated, InvalidWork, Conflict, check_highlight_limit
 from .roster import SERVICE_ACCOUNT, SPREADSHEET_ID
 
 TAB = 'C學習歷程'
@@ -117,6 +117,7 @@ class SheetLearningStore:
 
     def save(self, classroom, seat, data, submit=False):
         clean = self.validator(data)
+        check_highlight_limit(clean)
         revision = data.get('revision')
         if type(revision) is not int or revision < 0:
             raise InvalidWork('草稿版本不正確。')

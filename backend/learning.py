@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sqlite3
 import uuid
+import unicodedata
 from contextlib import closing
 from datetime import datetime, timezone
 
@@ -16,6 +17,13 @@ class InvalidWork(ValueError):
 
 class Conflict(ValueError):
     pass
+
+
+def check_highlight_limit(clean):
+    for text in clean['highlight_texts']:
+        count = sum(not ch.isspace() and not unicodedata.category(ch).startswith('P') for ch in text)
+        if count > 30:
+            raise InvalidWork('每段劃記最多 30 字（不含標點與空白），請縮短劃記後再儲存。')
 
 
 def validated(data, article_id=ARTICLE_ID, paragraphs=None):
@@ -90,6 +98,7 @@ class LearningStore:
 
     def save(self, classroom, seat, data, submit=False):
         clean = validated(data)
+        check_highlight_limit(clean)
         revision = data.get('revision')
         if type(revision) is not int or revision < 0:
             raise InvalidWork('草稿版本不正確。')

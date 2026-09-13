@@ -81,3 +81,14 @@ def test_render_requires_explicit_storage(monkeypatch):
     c=TestClient(create_app(Roster(lambda:ROWS),False))
     login(c)
     assert c.get('/api/c/work').status_code==503
+def test_highlight_limit_ignores_punctuation_and_checks_merged_spans():
+    from backend.learning import validated, check_highlight_limit, InvalidWork
+    import pytest
+    text = '甲' * 30 + '，。！ ' + '乙'
+    data = {'article_id': 'test', 'stance': '支持', 'stage': 'reading',
+            'inference': '', 'highlights': [{'p': 0, 'start': 0, 'end': 34}]}
+    clean = validated(data, 'test', [{'text': text}])
+    check_highlight_limit(clean)
+    data['highlights'] = [{'p': 0, 'start': 0, 'end': 20}, {'p': 0, 'start': 20, 'end': 35}]
+    with pytest.raises(InvalidWork, match='30'):
+        check_highlight_limit(validated(data, 'test', [{'text': text}]))
