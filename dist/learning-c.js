@@ -35,7 +35,7 @@ function save() {
     work.revision = result.work.revision;
     work.attempt_id = result.work.attempt_id;
     savedChanges = generation;
-    $('#save-status').textContent = changes === savedChanges ? '草稿已儲存' : '尚有變更未儲存';
+    $('#save-status').textContent = '已暫存，等待每 35 秒同步';
     error('');
   });
   queue = operation.catch(e => { $('#save-status').textContent = '尚未儲存'; error(e.message); });
@@ -171,9 +171,34 @@ async function load() {
     const data=await api('/api/c/work'); article=data.article; student=data.student;
     work=data.work || {stance:null,stage:'stance',highlights:[],inference:'',revision:0,submitted_at:null};
     $('#identity').textContent=`${student.classroom} 班・${student.seat} 號`;
-    $('#save-status').textContent=data.work ? '草稿已儲存' : '尚未開始';
+    $('#save-status').textContent=data.work ? '正在確認同步狀態…' : '尚未開始';
     $('#main').hidden=false; show(work.submitted_at ? 'complete' : work.stage,false);
   } catch(e) {error(e.message);}
   finally {$('#loading').hidden=true;}
 }
-load();
+let syncChecking = false;
+async function checkSync() {
+  if (!work || work.submitted_at || syncChecking || submitting) return;
+  syncChecking = true;
+  const revision = work.revision;
+  try {
+    const status = await api('/api/' + 'c' + '/sync');
+    if (work.submitted_at || submitting || revision !== work.revision) return;
+    if (changes !== savedChanges) {
+      $('#save-status').textContent = '尚有變更未暫存';
+      save().catch(() => {});
+    } else if (status.failed) {
+      $('#save-status').textContent = 'Google 同步延遲，已暫存並將自動重試';
+    } else if (status.pending) {
+      $('#save-status').textContent = '已暫存，等待每 35 秒同步';
+    } else {
+      $('#save-status').textContent = status.saved_at
+        ? '已同步 Google：' + new Date(status.saved_at).toLocaleTimeString('zh-TW')
+        : '尚未開始';
+    }
+  } catch {
+    $('#save-status').textContent = '無法確認同步狀態，請保持連線';
+  } finally { syncChecking = false; }
+}
+setInterval(checkSync, 5000);
+load().then(checkSync);

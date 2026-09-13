@@ -6,6 +6,7 @@ import re
 import secrets
 import threading
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -16,6 +17,8 @@ from .article import article_data
 from .learning import LearningStore, InvalidWork, Conflict
 from .sheet_learning import SheetLearningStore
 from .chat import ChatService, ChatUnavailable
+from .chat import validate_chat
+from .buffered_learning import BufferedLearningStore, SyncCoordinator
 import sqlite3
 
 DIST = Path(__file__).resolve().parent.parent / 'dist'
@@ -24,14 +27,21 @@ INVALID = '班級、座號或密碼不正確。'
 
 
 def create_app(roster=None, secure_cookie=None, learning_store=None, chat_service=None):
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    coordinator = SyncCoordinator()
+    @asynccontextmanager
+    async def lifespan(app):
+        coordinator.start()
+        yield
+        await run_in_threadpool(coordinator.stop)
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     roster = roster or Roster(GoogleSheetLoader())
     secure_cookie = os.getenv('COOKIE_SECURE', 'true').lower() != 'false' if secure_cookie is None else secure_cookie
     sessions = {}
     attempts = {}
     lock = threading.Lock()
-    learning_store = learning_store or (LearningStore() if os.getenv('LEARNING_STORAGE') == 'sqlite' else SheetLearningStore())
-    chat_service = chat_service or ChatService()
+    learning_store = learning_store or (LearningStore() if os.getenv('LEARNING_STORAGE') == 'sqlite' else BufferedLearningStore(coordinator))
+    chat_service = chat_service or ChatService(stores={g: BufferedLearningStore(
+        coordinator, interface=g, validator=validate_chat) for g in ('A', 'B')})
 
     def limited(keys):
         now = time.monotonic()
@@ -252,6 +262,16 @@ def create_app(roster=None, secure_cookie=None, learning_store=None, chat_servic
             return {'student': identity, 'work': work, 'article': {'id': f'chat-{group}-v1', 'paragraphs': []}}
         except OSError:
             return JSONResponse({'message': '無法讀取學習紀錄，請老師檢查試算表授權與連線。'}, status_code=503)
+
+    @app.get('/api/{group}/sync')
+    async def sync_status(request: Request, group: str):
+        identity = await c_identity(request) if group == 'c' else await ab_identity(request, group)
+        if isinstance(identity, JSONResponse):
+            return identity
+        store = learning_store if group == 'c' else chat_service.stores[group.upper()]
+        if hasattr(store, 'sync_status'):
+            return await run_in_threadpool(store.sync_status, identity['classroom'], identity['seat'])
+        return {'pending': False, 'failed': False, 'saved_at': None}
 
     @app.post('/api/{group}/{action}')
     async def chat_action(request: Request, group: str, action: str):

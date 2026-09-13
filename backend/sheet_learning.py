@@ -147,7 +147,10 @@ class SheetLearningStore:
             cells = [{'userEnteredValue': {'stringValue': value}} for value in row]
             cells[10]['note'] = note
             # A single request writes both visible data and recovery metadata atomically.
-            self.request('POST', ':batchUpdate', json={'requests': [{'appendCells': {
-                'sheetId': self._sheet_id, 'rows': [{'values': cells}], 'fields': 'userEnteredValue,note'
-            }}]})
+            self.persist(classroom, seat, work, cells)
             return work
+
+    def persist(self, classroom, seat, work, cells):
+        self.request('POST', ':batchUpdate', json={'requests': [{'appendCells': {
+            'sheetId': self._sheet_id, 'rows': [{'values': cells}], 'fields': 'userEnteredValue,note'
+        }}]})
