@@ -8,7 +8,24 @@ import copy
 import json
 import logging
 import threading
-from .sheet_learning import SheetLearningStore
+from .sheet_learning import SheetLearningStore, HEADERS
+
+PROGRESS_HEADERS = ['紀錄時間', '班級', '座號', '介面', '立場', '提交狀態',
+                    '劃記原文', '學生提問及AI回答內容', '推論', '對話總 tokens']
+
+
+def conversation_tokens(work):
+    total, missing = 0, 0
+    for message in work.get('messages', []):
+        if message.get('role') != 'model':
+            continue
+        usage = message.get('token_usage', {})
+        value = usage.get('totalTokenCount')
+        if type(value) is not int or value < 0:
+            missing += 1
+        else:
+            total += value
+    return f'資料不完整（已知 {total}）' if missing else total
 
 
 class SyncCoordinator:
@@ -75,6 +92,8 @@ class SyncCoordinator:
 class BufferedLearningStore(SheetLearningStore):
     def __init__(self, coordinator, **kwargs):
         super().__init__(**kwargs)
+        self.headers = PROGRESS_HEADERS
+        self.accepted_headers = [HEADERS, PROGRESS_HEADERS]
         self.tab = f'{self.interface}學習歷程'
         self.coordinator = coordinator
         self._lock = coordinator.lock
@@ -103,9 +122,10 @@ class BufferedLearningStore(SheetLearningStore):
                 return None
             key = (str(values[1]), str(values[2]).zfill(2))
             self.validate_student(*key)
-            envelope = json.loads(cells[10]['note'])
+            modern = len(values) > 3 and values[3] == self.interface
+            envelope = json.loads(cells[8 if modern else 10]['note'])
             work = envelope['work']
-            if envelope['schema'] != 'c-learning-v1' or values[4] != self.interface:
+            if envelope['schema'] != 'c-learning-v1' or values[3 if modern else 4] != self.interface:
                 raise ValueError()
             if work['article_id'] != self.article_id or type(work['revision']) is not int:
                 raise ValueError()
@@ -113,6 +133,18 @@ class BufferedLearningStore(SheetLearningStore):
             return key, work
         except (KeyError, IndexError, TypeError, ValueError):
             raise OSError('Learning recovery metadata does not match') from None
+
+    def new_cells(self, cells, work):
+        # Input may be old 11-column data or the already migrated 10-column row.
+        entered = [{**c, 'userEnteredValue': c.get('userEnteredValue', c.get('effectiveValue', {'stringValue': ''}))}
+                   for c in cells]
+        modern = entered[3]['userEnteredValue'].get('stringValue') == self.interface
+        indexes = range(9) if modern else (0, 1, 2, 4, 6, 7, 8, 9, 10)
+        output = [{'userEnteredValue': entered[i]['userEnteredValue'],
+                   **({'note': entered[i]['note']} if 'note' in entered[i] else {})} for i in indexes]
+        tokens = conversation_tokens(work)
+        output.append({'userEnteredValue': {'numberValue': tokens} if type(tokens) is int else {'stringValue': tokens}})
+        return output
 
     def _load(self):
         if self.loaded:
@@ -147,17 +179,19 @@ class BufferedLearningStore(SheetLearningStore):
 
         # First appearance determines row order. Compact old snapshots and holes
         # atomically with values + recovery notes; retries repeat the same result.
-        rows = [{'values': [{'userEnteredValue': c.get('effectiveValue', {'stringValue': ''}),
-                             **({'note': c['note']} if 'note' in c else {})}
-                            for c in current_cells[key]]} for key in current]
+        rows = [{'values': self.new_cells(current_cells[key], current[key])} for key in current]
         end = max(len(history_rows), len(rows), 1) + 1
         requests = [{'updateCells': {
+            'range': {'sheetId': self._sheet_id, 'startRowIndex': 0, 'endRowIndex': 1,
+                      'startColumnIndex': 0, 'endColumnIndex': 11},
+            'rows': [{'values': [{'userEnteredValue': {'stringValue': h}} for h in PROGRESS_HEADERS]}],
+            'fields': 'userEnteredValue,note'}}, {'updateCells': {
             'range': {'sheetId': self._sheet_id, 'startRowIndex': 1, 'endRowIndex': end,
                       'startColumnIndex': 0, 'endColumnIndex': 11},
             'rows': rows, 'fields': 'userEnteredValue,note'}},
             {'repeatCell': {
                 'range': {'sheetId': self._sheet_id, 'startRowIndex': 1,
-                          'startColumnIndex': 0, 'endColumnIndex': 11},
+                          'startColumnIndex': 0, 'endColumnIndex': 10},
                 'cell': {'userEnteredFormat': {'verticalAlignment': 'TOP', 'wrapStrategy': 'CLIP'}},
                 'fields': 'userEnteredFormat.verticalAlignment,userEnteredFormat.wrapStrategy'}},
             {'updateDimensionProperties': {
@@ -186,6 +220,7 @@ class BufferedLearningStore(SheetLearningStore):
             return work
 
     def persist(self, classroom, seat, work, cells):
+        cells = self.new_cells(cells, work)
         key = classroom, seat
         self.row_map.setdefault(key, len(self.row_map) + 1)
         self.cache[key] = copy.deepcopy(work)

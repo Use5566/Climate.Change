@@ -8,6 +8,7 @@ from tests.test_learning import draft
 class GoogleFake:
     def __init__(self):
         self.rows = {}
+        self.headers = {}
         self.calls = []
         self.setup_calls = []
         self.fail = False
@@ -29,6 +30,9 @@ class GoogleFake:
             start = change.get('start', change.get('range'))
             group = chr(start['sheetId'])
             first = start.get('rowIndex', start.get('startRowIndex'))
+            if first == 0:
+                self.headers[group] = copy.deepcopy(change['rows'][0]['values'])
+                continue
             rows = self.rows.setdefault(group, {})
             if 'range' in change:
                 for row in range(first, start['endRowIndex']):
@@ -69,9 +73,9 @@ def test_thirty_students_one_batch_fixed_rows_restore_and_noop():
     restored.save('601', '01', draft(revision=2, inference='再次更新'))
     restored.coordinator.flush()
     assert len(google.rows['C']) == 30
-    values = [c['effectiveValue']['stringValue'] for c in google.rows['C'][1]]
-    assert len(values) == 11 and values[3] == values[5] == values[9] == ''
-    assert values[10] == '再次更新'
+    values = [c['effectiveValue'].get('stringValue', c['effectiveValue'].get('numberValue')) for c in google.rows['C'][1]]
+    assert len(values) == 10 and values[3] == 'C' and values[7] == '' and values[9] == 0
+    assert values[8] == '再次更新'
 
 
 def test_failed_submission_never_reports_success_and_retry_is_idempotent():
@@ -174,12 +178,35 @@ def test_existing_history_duplicates_and_gaps_compact_with_latest_work():
     store.save('601', '07', draft(revision=2, inference='覆蓋原列'))
     store.coordinator.flush()
     assert list(google.rows['C']) == [1, 2, 3]
-    assert google.rows['C'][1][10]['effectiveValue']['stringValue'] == '覆蓋原列'
+    assert google.rows['C'][1][8]['effectiveValue']['stringValue'] == '覆蓋原列'
     assert google.rows['C'][3][2]['effectiveValue']['stringValue'] == '09'
     formats = google.setup_calls[0]
-    assert formats[1]['repeatCell']['cell']['userEnteredFormat'] == {
+    assert formats[2]['repeatCell']['cell']['userEnteredFormat'] == {
         'verticalAlignment': 'TOP', 'wrapStrategy': 'CLIP'}
-    assert formats[2]['updateDimensionProperties']['properties']['pixelSize'] == 60
+    assert formats[3]['updateDimensionProperties']['properties']['pixelSize'] == 60
+
+
+def test_token_totals_are_numeric_and_cache_not_double_counted():
+    from backend.buffered_learning import conversation_tokens, PROGRESS_HEADERS
+    from backend.chat import validate_chat
+    google = GoogleFake()
+    store = store_for(google, group='A')
+    store.validator = validate_chat
+    data = draft(article_id=store.article_id, highlights=[], messages=[
+        {'role': 'user', 'text': '問題一'},
+        {'role': 'model', 'text': '回答一', 'token_usage': {
+            'totalTokenCount': 110, 'promptTokenCount': 100, 'cachedContentTokenCount': 90}},
+        {'role': 'user', 'text': '問題二'},
+        {'role': 'model', 'text': '回答二', 'token_usage': {'totalTokenCount': 220}}])
+    saved = store.save('601', '01', data)
+    store.coordinator.flush()
+    assert google.rows['A'][1][9]['effectiveValue'] == {'numberValue': 330}
+    assert [c['userEnteredValue']['stringValue'] for c in google.headers['A']] == PROGRESS_HEADERS
+    store.save('601', '01', data)  # Idempotent retry does not add usage.
+    assert conversation_tokens(store.read('601', '01')) == 330
+    assert 'note' in google.rows['A'][1][8]
+    unknown = {'messages': [*saved['messages'], {'role': 'model', 'text': '舊回答'}]}
+    assert conversation_tokens(unknown) == '資料不完整（已知 330）'
 
 
 def test_failed_migration_acknowledgement_reloads_without_losing_students():

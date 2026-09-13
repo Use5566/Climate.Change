@@ -24,6 +24,8 @@ class SheetLearningStore:
         if interface not in ('A', 'B', 'C'):
             raise ValueError('Invalid interface')
         self.interface = interface
+        self.headers = HEADERS
+        self.accepted_headers = [HEADERS]
         self.tab = f'{interface}學習歷程'
         self.article_id = ARTICLE_ID if interface == 'C' else f'chat-{interface.lower()}-v1'
         self.validator = validator
@@ -74,8 +76,8 @@ class SheetLearningStore:
         existing = self.request('GET', self.address('A1:1')).get('values', [])
         if not existing:
             # One contiguous RAW table; identifiers and student text remain literal.
-            self.request('PUT', self.address('A1:K1'), params={'valueInputOption': 'RAW'}, json={'values': [HEADERS]})
-        elif [[str(value).strip() for value in row] for row in existing] != [HEADERS]:
+            self.request('PUT', self.address('A1:K1'), params={'valueInputOption': 'RAW'}, json={'values': [self.headers]})
+        elif len(existing) != 1 or [str(value).strip() for value in existing[0]] not in self.accepted_headers:
             raise OSError('Learning headers do not match')
         self._ready = True
 
