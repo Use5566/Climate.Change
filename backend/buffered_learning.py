@@ -1,7 +1,8 @@
-"""Single-worker, bounded latest-state cache; one fixed row per student.
+"""Single-worker, bounded latest-state cache; one contiguous row per student.
 
-Only Google-acknowledged submissions are exposed as complete. Old history tabs
-are read for recovery and never changed. No passwords enter this cache.
+Only Google-acknowledged submissions are exposed as complete. Progress tabs
+are read for migration, while history tabs hold latest states. No passwords
+enter this cache.
 """
 import copy
 import json
@@ -74,19 +75,19 @@ class SyncCoordinator:
 class BufferedLearningStore(SheetLearningStore):
     def __init__(self, coordinator, **kwargs):
         super().__init__(**kwargs)
-        self.tab = f'{self.interface}學習進度'
+        self.tab = f'{self.interface}學習歷程'
         self.coordinator = coordinator
         self._lock = coordinator.lock
         self.cache, self.confirmed, self.dirty = {}, {}, {}
+        self.row_map = {}
         self.loaded = False
         self.failed = False
         coordinator.stores.append(self)
 
     @staticmethod
-    def row_index(classroom, seat):
+    def validate_student(classroom, seat):
         if classroom not in ('601', '602', '603', '604', '605') or seat not in tuple(f'{i:02}' for i in range(1, 33)):
             raise ValueError('Invalid student')
-        return (int(classroom) - 601) * 32 + int(seat)
 
     def _load_rows(self, tab):
         result = self.request('GET', params={'ranges': f"'{tab}'!A2:K",
@@ -101,7 +102,7 @@ class BufferedLearningStore(SheetLearningStore):
             if not any(values):
                 return None
             key = (str(values[1]), str(values[2]).zfill(2))
-            self.row_index(*key)
+            self.validate_student(*key)
             envelope = json.loads(cells[10]['note'])
             work = envelope['work']
             if envelope['schema'] != 'c-learning-v1' or values[4] != self.interface:
@@ -117,40 +118,62 @@ class BufferedLearningStore(SheetLearningStore):
         if self.loaded:
             return
         self.ensure()
-        current = {}
-        for index, cells in enumerate(self._load_rows(self.tab), 1):
-            record = self._decode(cells)
-            if record:
-                key, work = record
-                if self.row_index(*key) != index:
-                    raise OSError('Learning rows moved; restore original row order')
-                current[key] = work
-        legacy, legacy_cells = {}, {}
-        metadata = self.request('GET', params={'fields': 'sheets.properties(sheetId,title)'})
-        old_tab = f'{self.interface}學習歷程'
-        if any(s['properties']['title'] == old_tab and s['properties']['sheetId'] != 0
-               for s in metadata.get('sheets', [])):
-            for cells in self._load_rows(old_tab):
+        history_rows = self._load_rows(self.tab)
+        current, current_cells = {}, {}
+
+        def merge(rows):
+            for cells in rows:
                 record = self._decode(cells)
-                if record:
-                    key, work = record
-                    previous = legacy.get(key)
-                    if previous and previous['revision'] == work['revision'] and previous != work:
-                        raise OSError('Conflicting legacy revisions')
-                    if previous is None or work['revision'] > previous['revision']:
-                        legacy[key] = work
-                        legacy_cells[key] = cells
-        self.cache = {**legacy, **current}
+                if not record:
+                    continue
+                key, work = record
+                previous = current.get(key)
+                if previous:
+                    if previous['attempt_id'] != work['attempt_id']:
+                        raise OSError('Multiple learning attempts require teacher reconciliation')
+                    if previous['revision'] == work['revision'] and previous != work:
+                        raise OSError('Conflicting learning revisions')
+                    if previous['revision'] >= work['revision']:
+                        continue
+                current[key], current_cells[key] = work, cells
+
+        merge(history_rows)
+        metadata = self.request('GET', params={'fields': 'sheets.properties(sheetId,title)'})
+        old_tab = f'{self.interface}學習進度'
+        progress = next((s['properties'] for s in metadata.get('sheets', [])
+                         if s['properties']['title'] == old_tab and s['properties']['sheetId'] != 0), None)
+        if progress:
+            merge(self._load_rows(old_tab))
+
+        # First appearance determines row order. Compact old snapshots and holes
+        # atomically with values + recovery notes; retries repeat the same result.
+        rows = [{'values': [{'userEnteredValue': c.get('effectiveValue', {'stringValue': ''}),
+                             **({'note': c['note']} if 'note' in c else {})}
+                            for c in current_cells[key]]} for key in current]
+        end = max(len(history_rows), len(rows), 1) + 1
+        requests = [{'updateCells': {
+            'range': {'sheetId': self._sheet_id, 'startRowIndex': 1, 'endRowIndex': end,
+                      'startColumnIndex': 0, 'endColumnIndex': 11},
+            'rows': rows, 'fields': 'userEnteredValue,note'}},
+            {'repeatCell': {
+                'range': {'sheetId': self._sheet_id, 'startRowIndex': 1,
+                          'startColumnIndex': 0, 'endColumnIndex': 11},
+                'cell': {'userEnteredFormat': {'verticalAlignment': 'TOP', 'wrapStrategy': 'CLIP'}},
+                'fields': 'userEnteredFormat.verticalAlignment,userEnteredFormat.wrapStrategy'}},
+            {'updateDimensionProperties': {
+                'range': {'sheetId': self._sheet_id, 'dimension': 'ROWS', 'startIndex': 1},
+                'properties': {'pixelSize': 60}, 'fields': 'pixelSize'}}]
+        if progress:
+            requests.append({'updateSheetProperties': {
+                'properties': {'sheetId': progress['sheetId'], 'hidden': True}, 'fields': 'hidden'}})
+        self.request('POST', ':batchUpdate', json={'requests': requests})
+        self.row_map = {key: index for index, key in enumerate(current, 1)}
+        self.cache = current
         self.confirmed = copy.deepcopy(self.cache)
         self.loaded = True
-        for key, work in legacy.items():
-            if key not in current:
-                cells = [{'userEnteredValue': c.get('effectiveValue', {'stringValue': ''}),
-                          **({'note': c['note']} if 'note' in c else {})} for c in legacy_cells[key]]
-                self.persist(*key, work, cells)
 
     def latest(self, classroom, seat):
-        self.row_index(classroom, seat)
+        self.validate_student(classroom, seat)
         self._load()
         return copy.deepcopy(self.cache.get((classroom, seat)))
 
@@ -164,9 +187,10 @@ class BufferedLearningStore(SheetLearningStore):
 
     def persist(self, classroom, seat, work, cells):
         key = classroom, seat
+        self.row_map.setdefault(key, len(self.row_map) + 1)
         self.cache[key] = copy.deepcopy(work)
         self.dirty[key] = (copy.deepcopy(work), {'updateCells': {
-            'start': {'sheetId': self._sheet_id, 'rowIndex': self.row_index(*key), 'columnIndex': 0},
+            'start': {'sheetId': self._sheet_id, 'rowIndex': self.row_map[key], 'columnIndex': 0},
             'rows': [{'values': cells}], 'fields': 'userEnteredValue,note'}})
 
     def save(self, classroom, seat, data, submit=False):

@@ -6,7 +6,7 @@ let article, student, work, selected = [], timer, changes = 0, savedChanges = 0,
 function error(message) { $('#error').textContent = message; $('#error').hidden = !message; }
 async function api(path, payload) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const timeout = setTimeout(() => controller.abort(), 180000);
   try {
     const response = await fetch(path, {method:payload === undefined ? 'GET' : 'POST',
       credentials:'same-origin', headers:{'Content-Type':'application/json','X-Learning-Client':'1'},

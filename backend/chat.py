@@ -9,6 +9,7 @@ import requests
 
 from .learning import validated, InvalidWork, Conflict
 from .sheet_learning import SheetLearningStore
+from .knowledge_cache import KnowledgeCache, KnowledgeUnavailable
 
 PROMPTS = Path(__file__).resolve().parent.parent / 'prompts'
 
@@ -38,6 +39,9 @@ def validate_chat(data):
 
 
 class Gemini:
+    def __init__(self):
+        self.knowledge = KnowledgeCache()
+
     def reply(self, group, stance, messages):
         key = os.getenv('GEMINI_API_KEY', '').strip()
         model = os.getenv('GEMINI_MODEL', '').strip()
@@ -49,21 +53,49 @@ class Gemini:
             prompt = (PROMPTS / f'interface_{group.lower()}.txt').read_text(encoding='utf-8-sig').strip()
             if not prompt:
                 raise ChatUnavailable('AI 教學提示尚未填寫，請通知老師。')
+            contents = [{'role': m['role'], 'parts': [{'text': m['text']}]} for m in messages]
+            body = {'systemInstruction': {'parts': [{'text': prompt + '\n學生目前選擇的立場：' + stance}]},
+                    'contents': contents, 'generationConfig': {'maxOutputTokens': 1200}}
+            cache, digest = None, None
+            if self.knowledge.enabled():
+                cache, digest = self.knowledge.prepare(key, model, group, prompt)
+                body.pop('systemInstruction')
+                body['cachedContent'] = cache['name']
+                # Dynamic stance belongs to this student's request, never the shared cache.
+                contents = [{'role': m['role'], 'parts': [{'text': m['text']}]} for m in messages]
+                if contents:
+                    contents[0]['parts'].insert(0, {'text': '學生目前選擇的立場：' + stance})
+                body['contents'] = contents
             response = requests.post(
                 f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
                 headers={'x-goog-api-key': key}, timeout=(10, 45),
-                json={'systemInstruction': {'parts': [{'text': prompt + '\n學生目前選擇的立場：' + stance}]},
-                      'contents': [{'role': m['role'], 'parts': [{'text': m['text']}]} for m in messages],
-                      'generationConfig': {'maxOutputTokens': 1200}})
+                json=body)
+            if cache and getattr(response, 'status_code', None) == 404:
+                cache, digest = self.knowledge.prepare(key, model, group, prompt, refresh=cache['name'])
+                body['cachedContent'] = cache['name']
+                response = requests.post(
+                    f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+                    headers={'x-goog-api-key': key}, timeout=(10, 45), json=body)
             response.raise_for_status()
-            candidates = response.json().get('candidates', [])
+            result = response.json()
+            candidates = result.get('candidates', [])
             if not candidates or candidates[0].get('finishReason') != 'STOP':
                 raise ChatUnavailable('AI 這次未能提供完整回覆，請稍後重試或調整問題。')
             text = '\n'.join(p.get('text', '') for p in candidates[0].get('content', {}).get('parts', [])
                              if not p.get('thought')).strip()
             if not text or len(text) > 4000:
                 raise ChatUnavailable('AI 這次未能提供合適長度的回覆，請調整問題後重試。')
-            return text, {'model': model, 'prompt_sha256': hashlib.sha256(prompt.encode()).hexdigest()}
+            metadata = {'model': model, 'prompt_sha256': hashlib.sha256(prompt.encode()).hexdigest()}
+            if cache:
+                metadata.update(knowledge_sha256=digest, cache_fingerprint=cache['displayName'],
+                                knowledge_mode='explicit')
+            usage = result.get('usageMetadata', {})
+            metadata['token_usage'] = {k: usage[k] for k in (
+                'promptTokenCount', 'cachedContentTokenCount', 'candidatesTokenCount',
+                'thoughtsTokenCount', 'totalTokenCount') if type(usage.get(k)) is int}
+            return text, metadata
+        except KnowledgeUnavailable as error:
+            raise ChatUnavailable(str(error)) from None
         except ChatUnavailable:
             raise
         except Exception:
