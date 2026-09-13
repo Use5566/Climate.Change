@@ -18,8 +18,8 @@ class Conflict(ValueError):
     pass
 
 
-def validated(data):
-    if not isinstance(data, dict) or data.get('article_id') != ARTICLE_ID:
+def validated(data, article_id=ARTICLE_ID, paragraphs=None):
+    if not isinstance(data, dict) or data.get('article_id') != article_id:
         raise InvalidWork('文章版本不符，請重新整理頁面。')
     stance = data.get('stance')
     stage = data.get('stage')
@@ -31,7 +31,7 @@ def validated(data):
     highlights = data.get('highlights')
     if not isinstance(highlights, list) or len(highlights) > 500:
         raise InvalidWork('劃記資料格式不正確。')
-    paragraphs = article_data()['paragraphs']
+    paragraphs = article_data()['paragraphs'] if paragraphs is None else paragraphs
     clean = []
     for mark in highlights:
         if not isinstance(mark, dict):
@@ -48,7 +48,7 @@ def validated(data):
             merged[-1]['end'] = max(merged[-1]['end'], mark['end'])
         else:
             merged.append(mark.copy())
-    return {'article_id': ARTICLE_ID, 'stance': stance, 'stage': stage,
+    return {'article_id': article_id, 'stance': stance, 'stage': stage,
             'highlights': merged, 'inference': inference,
             'highlight_texts': [paragraphs[h['p']]['text'][h['start']:h['end']] for h in merged],
             'article_snapshot': [p['text'] for p in paragraphs]}

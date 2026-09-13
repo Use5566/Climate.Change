@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>對話與推論｜自主學習室</title>
+  <link rel="stylesheet" href="/learning-c.css"><link rel="stylesheet" href="/learning-ab.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231945c4'/%3E%3Cpath d='M9 9h6v14H9zm8 0h6v14h-6z' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/">✦ 自主學習室</a><span class="course">對話與推論</span><span id="identity"></span></header>
+  <nav aria-label="學習進度"><ol class="steps"><li data-step="stance"><span>1</span>選擇立場</li><li data-step="reading"><span>2</span>對話與劃記</li><li data-step="summary"><span>3</span>摘要與推論</li></ol><span id="save-status" role="status">載入中…</span></nav>
+  <div id="error" role="alert" hidden></div>
+  <div id="loading" class="loading">正在載入你的學習內容…</div>
+  <main id="main" hidden>
+    <section id="stance-view" class="stance-view" hidden aria-labelledby="stance-title">
+      <p class="eyebrow">我的觀點</p><h1 id="stance-title" tabindex="-1">你支持哪一個立場？</h1>
+      <p class="muted">選擇你的立場，接著與 AI 對話。</p>
+      <div class="choices"><button data-stance="支持" class="choice"><span>支持</span></button><button data-stance="反對" class="choice alternative"><span>反對</span></button></div>
+    </section>
+    <section id="reading-view" hidden aria-labelledby="reading-title">
+      <div class="reading-tools"><div><span class="eyebrow">AI 學習夥伴</span><h1 id="reading-title" tabindex="-1">與 AI 對話</h1></div><span class="stance-chip"></span></div>
+      <div class="selection-tools"><p id="selection-hint">拖曳選取文字；iPad 可長按文字，再調整選取範圍。</p><button id="toggle-highlight" class="small" disabled>先選取對話文字</button><span id="highlight-count">已劃記 0 段</span></div>
+      <article id="article" aria-label="對話紀錄"></article>
+<p id="chat-status" role="status"></p>
+<form id="chat-form" class="chat-composer"><label for="question">你的問題</label><div><textarea id="question" rows="2" maxlength="1000" placeholder="輸入你的想法或問題…" required></textarea><button id="send-message" type="submit">傳送</button></div><p class="muted">AI 回覆可能有誤，請思考它的理由與證據。請勿輸入姓名或密碼。</p></form>
+      <footer class="reading-footer"><span>選到已劃記的文字，可取消該範圍的劃記。</span><button id="reading-done">對話完畢</button></footer>
+    </section>
+    <section id="summary-view" class="summary-view" hidden aria-labelledby="summary-title">
+      <div class="section-heading"><div><p class="eyebrow">整理我的想法</p><h1 id="summary-title" tabindex="-1">摘要與推論</h1></div><button id="back-reading" class="secondary small">返回對話調整劃記</button></div>
+      <section class="summary-block"><h2>我的立場</h2><span class="stance-chip"></span></section>
+      <section class="summary-block"><h2>我的摘要</h2><p class="muted">依對話順序，整理你劃記的文字。</p><ol id="summary-list"></ol><p id="empty-summary" class="muted" hidden>你還沒有劃記文字，可以返回對話補充。</p></section>
+      <form id="inference-form"><label for="inference">推論</label><textarea id="inference" rows="7" maxlength="10000" required placeholder="請寫下你的推論。"></textarea><div class="submit-row"><span class="muted">提交後，這次的學習紀錄將保存。</span><button id="submit-work" type="submit">提交</button></div></form>
+    </section>
+    <section id="complete-view" class="complete-view" hidden aria-labelledby="complete-title"><span class="completion-symbol" aria-hidden="true">✓</span><h1 id="complete-title" tabindex="-1">已完成提交</h1><p>你的立場、劃記與推論已儲存。</p><p id="receipt" class="muted"></p><button id="finish-logout">登出</button></section>
+  </main>
+  <script type="module" src="/learning-ab.js"></script>
+</body>
+</html>

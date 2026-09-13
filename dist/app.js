@@ -17,8 +17,8 @@ function message(text) {
   status.hidden = false;
 }
 function showStudent(student) {
-  if (student.interface === 'C') {
-    location.assign('/learn/c');
+  if (['A', 'B', 'C'].includes(student.interface)) {
+    location.assign(`/learn/${student.interface.toLowerCase()}`);
     return;
   }
   form.hidden = true;

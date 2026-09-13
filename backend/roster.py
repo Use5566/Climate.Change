@@ -43,14 +43,17 @@ class Roster:
         return hmac.digest(self._pepper, f'{classroom}:{seat}:{password}'.encode(), 'sha256')
 
     def _parse(self, rows):
-        headers = [str(x).strip() for x in rows[0]] if rows else []
-        if len(headers) != 4 or headers[:3] != ['班級', '座號', '密碼'] or headers[3] not in ('介面', '學習介面'):
+        headers = [str(x).strip().replace('级', '級') for x in rows[0]] if rows else []
+        offset = 1 if len(headers) == 11 else 0
+        if (len(headers) not in (4, 11) or headers[offset:offset+3] != ['班級', '座號', '密碼']
+                or headers[offset+3] not in ('介面', '學習介面')):
             raise RosterUnavailable('INVALID_HEADERS')
         result = {}
         for index, raw in enumerate(rows[1:], 2):
             if not any(str(x).strip() for x in raw):
                 continue
-            row = list(raw) + [''] * (4 - len(raw))
+            row = list(raw)[offset:offset+4]
+            row += [''] * (4 - len(row))
             classroom, seat, password, interface = map(str, row[:4])
             classroom, seat, interface = classroom.strip(), seat.strip(), interface.strip()
             if not re.fullmatch(r'60[1-5]', classroom) or not re.fullmatch(r'0?[1-9]|[12][0-9]|3[0-2]', seat):
@@ -116,7 +119,7 @@ class GoogleSheetLoader:
             title = next((x['properties']['title'] for x in tabs if x['properties']['sheetId'] == 0), None)
             if title is None:
                 raise RosterUnavailable('MISSING_SHEET_GID_0')
-            address = "'" + title.replace("'", "''") + "'!A:D"
+            address = "'" + title.replace("'", "''") + "'!A:K"
             response = self._session.get(base + '/values/' + quote(address, safe=''),
                                          params={'valueRenderOption': 'FORMATTED_VALUE'}, timeout=15)
             response.raise_for_status()

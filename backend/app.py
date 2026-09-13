@@ -14,6 +14,8 @@ from starlette.concurrency import run_in_threadpool
 from .roster import GoogleSheetLoader, Roster, RosterUnavailable
 from .article import article_data
 from .learning import LearningStore, InvalidWork, Conflict
+from .sheet_learning import SheetLearningStore
+from .chat import ChatService, ChatUnavailable
 import sqlite3
 
 DIST = Path(__file__).resolve().parent.parent / 'dist'
@@ -21,14 +23,15 @@ COOKIE = 'student_session'
 INVALID = '班級、座號或密碼不正確。'
 
 
-def create_app(roster=None, secure_cookie=None, learning_store=None):
+def create_app(roster=None, secure_cookie=None, learning_store=None, chat_service=None):
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     roster = roster or Roster(GoogleSheetLoader())
     secure_cookie = os.getenv('COOKIE_SECURE', 'true').lower() != 'false' if secure_cookie is None else secure_cookie
     sessions = {}
     attempts = {}
     lock = threading.Lock()
-    learning_store = learning_store or LearningStore()
+    learning_store = learning_store or (LearningStore() if os.getenv('LEARNING_STORAGE') == 'sqlite' else SheetLearningStore())
+    chat_service = chat_service or ChatService()
 
     def limited(keys):
         now = time.monotonic()
@@ -178,7 +181,7 @@ def create_app(roster=None, secure_cookie=None, learning_store=None):
         try:
             draft = await run_in_threadpool(learning_store.read, identity['classroom'], identity['seat'])
         except (OSError, sqlite3.Error):
-            return JSONResponse({'message': '學習紀錄儲存空間尚未就緒，請通知老師。'}, status_code=503)
+            return JSONResponse({'message': '學習紀錄目前無法讀取，請通知老師檢查試算表授權與連線。'}, status_code=503)
         return {'student': identity, 'article': article_data(), 'work': draft}
 
     async def write_work(request, submit_work):
@@ -214,6 +217,75 @@ def create_app(roster=None, secure_cookie=None, learning_store=None):
     @app.post('/api/c/submit')
     async def submit_work(request: Request):
         return await write_work(request, True)
+
+    async def ab_identity(request, group):
+        result = await session(request)
+        if isinstance(result, JSONResponse):
+            return result
+        if group not in ('a', 'b') or result['student']['interface'] != group.upper():
+            return JSONResponse({'message': '請使用老師指定的學習介面。'}, status_code=403)
+        return result['student']
+
+    @app.get('/learn/{group}')
+    async def chat_page(request: Request, group: str):
+        identity = await ab_identity(request, group)
+        if isinstance(identity, JSONResponse):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse('/', status_code=303)
+        return FileResponse(DIST / 'learning-ab.html')
+
+    @app.get('/learning-ab.js')
+    def chat_script():
+        return FileResponse(DIST / 'learning-ab.js', media_type='text/javascript')
+
+    @app.get('/learning-ab.css')
+    def chat_style():
+        return FileResponse(DIST / 'learning-ab.css', media_type='text/css')
+
+    @app.get('/api/{group}/work')
+    async def chat_work(request: Request, group: str):
+        identity = await ab_identity(request, group)
+        if isinstance(identity, JSONResponse):
+            return identity
+        try:
+            work = await run_in_threadpool(chat_service.read, group.upper(), identity['classroom'], identity['seat'])
+            return {'student': identity, 'work': work, 'article': {'id': f'chat-{group}-v1', 'paragraphs': []}}
+        except OSError:
+            return JSONResponse({'message': '無法讀取學習紀錄，請老師檢查試算表授權與連線。'}, status_code=503)
+
+    @app.post('/api/{group}/{action}')
+    async def chat_action(request: Request, group: str, action: str):
+        identity = await ab_identity(request, group)
+        if isinstance(identity, JSONResponse):
+            return identity
+        if action not in ('draft', 'submit', 'message'):
+            return JSONResponse({'message': '無此操作。'}, status_code=404)
+        if request.headers.get('x-learning-client') != '1' or request.headers.get('content-type', '').split(';')[0] != 'application/json':
+            return JSONResponse({'message': '請從學習頁面操作。'}, status_code=403)
+        import json
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 128000:
+                return JSONResponse({'message': '內容過長。'}, status_code=413)
+        try:
+            data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError()
+            if data.get('classroom') != identity['classroom'] or data.get('seat') != identity['seat']:
+                raise Conflict('登入學生已變更，請保留文字後重新登入。')
+            if action == 'message' and limited([(('chat', group, identity['classroom'], identity['seat']), 30)]):
+                return JSONResponse({'message': '提問過於頻繁，請稍後再試。'}, status_code=429)
+            work = await run_in_threadpool(chat_service.operate, group.upper(), identity['classroom'], identity['seat'], data, action)
+            return {'work': work}
+        except Conflict as e:
+            return JSONResponse({'message': str(e)}, status_code=409)
+        except (ValueError, TypeError) as e:
+            return JSONResponse({'message': str(e) if isinstance(e, InvalidWork) else '資料格式不正確。'}, status_code=400)
+        except ChatUnavailable as e:
+            return JSONResponse({'message': str(e)}, status_code=503)
+        except OSError:
+            return JSONResponse({'message': '紀錄尚未確認儲存，請保留此頁並重試。'}, status_code=503)
 
     return app
 
