@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from .roster import GoogleSheetLoader, Roster, RosterUnavailable
-from .article import article_data
+from .article import article_for_work
 from .learning import LearningStore, InvalidWork, Conflict
 from .sheet_learning import SheetLearningStore
 from .chat import ChatService, ChatUnavailable
@@ -207,9 +207,10 @@ def create_app(roster=None, secure_cookie=None, learning_store=None, chat_servic
             return identity
         try:
             draft = await run_in_threadpool(learning_store.read, identity['classroom'], identity['seat'])
+            article = article_for_work(draft)
         except (OSError, sqlite3.Error):
-            return JSONResponse({'message': '學習紀錄目前無法讀取，請通知老師檢查試算表授權與連線。'}, status_code=503)
-        return {'student': identity, 'article': article_data(), 'work': draft}
+            return JSONResponse({'message': '文章或學習紀錄目前無法讀取，請通知老師檢查 C 文章檔與試算表連線。'}, status_code=503)
+        return {'student': identity, 'article': article, 'work': draft}
 
     async def write_work(request, submit_work):
         identity = await c_identity(request)

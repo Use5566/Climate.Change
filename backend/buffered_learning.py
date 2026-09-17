@@ -10,6 +10,7 @@ import logging
 import threading
 import time
 from .sheet_learning import SheetLearningStore, HEADERS
+from .learning import validated_c
 
 PROGRESS_HEADERS = ['紀錄時間', '班級', '座號', '介面', '立場', '提交狀態',
                     '劃記原文', '學生提問及AI回答內容', '推論', '對話總 tokens']
@@ -148,9 +149,14 @@ class BufferedLearningStore(SheetLearningStore):
             work = envelope['work']
             if envelope['schema'] != 'c-learning-v1' or values[3 if modern else 4] != self.interface:
                 raise ValueError()
-            if work['article_id'] != self.article_id or type(work['revision']) is not int:
+            if type(work['revision']) is not int:
                 raise ValueError()
-            self.validator(work)
+            if self.interface == 'C':
+                validated_c(work, work)
+            else:
+                if work['article_id'] != self.article_id:
+                    raise ValueError()
+                self.validator(work)
             return key, work
         except (KeyError, IndexError, TypeError, ValueError):
             raise OSError('Learning recovery metadata does not match') from None

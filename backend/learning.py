@@ -8,7 +8,7 @@ import unicodedata
 from contextlib import closing
 from datetime import datetime, timezone
 
-from .article import ARTICLE_ID, article_data
+from .article import ARTICLE_ID, article_data, article_for_work
 
 
 class InvalidWork(ValueError):
@@ -62,6 +62,12 @@ def validated(data, article_id=ARTICLE_ID, paragraphs=None):
             'article_snapshot': [p['text'] for p in paragraphs]}
 
 
+def validated_c(data, previous=None):
+    # Only server-owned recovery metadata may choose an older article.
+    article = article_for_work(previous)
+    return validated(data, article['id'], article['paragraphs'])
+
+
 class LearningStore:
     def __init__(self, path=None):
         configured = path or os.getenv('LEARNING_DB_PATH')
@@ -85,8 +91,8 @@ class LearningStore:
 
     def read(self, classroom, seat):
         with closing(self.connect()) as db, db:
-            row = db.execute('SELECT * FROM c_work WHERE classroom=? AND seat=? AND article_id=?',
-                             (classroom, seat, ARTICLE_ID)).fetchone()
+            row = db.execute('SELECT * FROM c_work WHERE classroom=? AND seat=? ORDER BY updated_at DESC LIMIT 1',
+                             (classroom, seat)).fetchone()
             return self.result(row) if row else None
 
     @staticmethod
@@ -97,18 +103,18 @@ class LearningStore:
                 'submitted_at': row['submitted_at']}
 
     def save(self, classroom, seat, data, submit=False):
-        clean = validated(data)
-        check_highlight_limit(clean)
         revision = data.get('revision')
         if type(revision) is not int or revision < 0:
             raise InvalidWork('草稿版本不正確。')
-        if submit and (clean['stage'] != 'summary' or not clean['inference'].strip()):
-            raise InvalidWork('請填寫推論後再提交。')
         now = datetime.now(timezone.utc).isoformat()
         with closing(self.connect()) as db, db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT * FROM c_work WHERE classroom=? AND seat=? AND article_id=?',
-                             (classroom, seat, ARTICLE_ID)).fetchone()
+            row = db.execute('SELECT * FROM c_work WHERE classroom=? AND seat=? ORDER BY updated_at DESC LIMIT 1',
+                             (classroom, seat)).fetchone()
+            clean = validated_c(data, self.result(row) if row else None)
+            check_highlight_limit(clean)
+            if submit and (clean['stage'] != 'summary' or not clean['inference'].strip()):
+                raise InvalidWork('請填寫推論後再提交。')
             if row and row['submitted_at']:
                 if submit and json.loads(row['payload']) == clean:
                     return self.result(row)  # A retry after a lost response is idempotent.
@@ -121,9 +127,9 @@ class LearningStore:
                 ON CONFLICT(classroom, seat, article_id) DO UPDATE SET
                 payload=excluded.payload, revision=excluded.revision,
                 updated_at=excluded.updated_at, submitted_at=excluded.submitted_at''',
-                (classroom, seat, ARTICLE_ID, row['attempt_id'] if row else str(uuid.uuid4()),
+                (classroom, seat, clean['article_id'], row['attempt_id'] if row else str(uuid.uuid4()),
                  json.dumps(clean, ensure_ascii=False), revision + 1,
                  row['started_at'] if row else now, now, now if submit else None))
             saved = db.execute('SELECT * FROM c_work WHERE classroom=? AND seat=? AND article_id=?',
-                               (classroom, seat, ARTICLE_ID)).fetchone()
+                               (classroom, seat, clean['article_id'])).fetchone()
             return self.result(saved)

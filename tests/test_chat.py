@@ -132,6 +132,8 @@ def test_ai_blocked_response_is_not_saved_as_answer(monkeypatch):
 def test_chat_store_rejects_overlong_highlights(group):
     from backend.learning import InvalidWork
     store = MemorySheet()
+    store.interface = group
+    store.article_id = f'chat-{group.lower()}-v1'
     store.validator = validate_chat
     data = {'article_id': f'chat-{group.lower()}-v1', 'stance': '支持', 'stage': 'reading',
             'inference': '', 'revision': 0, 'messages': [{'role': 'user', 'text': '甲' * 31}],

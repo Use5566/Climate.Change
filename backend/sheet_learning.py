@@ -10,8 +10,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
-from .article import ARTICLE_ID
-from .learning import validated, InvalidWork, Conflict, check_highlight_limit
+from .article import ARTICLE_ID, article_for_work
+from .learning import validated, InvalidWork, Conflict, check_highlight_limit, validated_c
 from .roster import SERVICE_ACCOUNT, SPREADSHEET_ID
 
 TAB = 'C學習歷程'
@@ -101,7 +101,9 @@ class SheetLearningStore:
                 work = envelope['work']
                 if not isinstance(work, dict) or type(work['revision']) is not int:
                     raise ValueError()
-                if work['article_id'] != self.article_id:
+                if self.interface == 'C':
+                    article_for_work(work)
+                elif work['article_id'] != self.article_id:
                     continue
                 if latest and work['revision'] == latest['revision'] and work != latest:
                     raise ValueError()
@@ -116,15 +118,15 @@ class SheetLearningStore:
             return self.latest(classroom, seat)
 
     def save(self, classroom, seat, data, submit=False):
-        clean = self.validator(data)
-        check_highlight_limit(clean)
         revision = data.get('revision')
         if type(revision) is not int or revision < 0:
             raise InvalidWork('草稿版本不正確。')
-        if submit and (clean['stage'] != 'summary' or not clean['inference'].strip()):
-            raise InvalidWork('請填寫推論後再提交。')
         with self._lock:
             old = self.latest(classroom, seat)
+            clean = validated_c(data, old) if self.interface == 'C' else self.validator(data)
+            check_highlight_limit(clean)
+            if submit and (clean['stage'] != 'summary' or not clean['inference'].strip()):
+                raise InvalidWork('請填寫推論後再提交。')
             same = old is not None and all(old.get(k) == v for k, v in clean.items())
             if old and old['submitted_at']:
                 if submit and same:
