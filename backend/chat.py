@@ -117,6 +117,42 @@ class ChatService:
     def read(self, group, classroom, seat):
         return self.stores[group].read(classroom, seat)
 
+    def cleanup(self):
+        # Failed saves retain generated answers. Retry storing them without
+        # calling Gemini again; release only after the store accepts the reply.
+        with self._guard:
+            keys = list(self._answers)
+        for cache_key in keys:
+            group, classroom, seat, request_id = cache_key
+            student_lock = self.lock(group, classroom, seat)
+            if not student_lock.acquire(blocking=False):
+                continue
+            try:
+                with self._guard:
+                    answer = self._answers.get(cache_key)
+                if answer is None:
+                    continue
+                store = self.stores[group]
+                old = store.read(classroom, seat)
+                messages = old.get('messages', []) if old else []
+                if any(m.get('request_id') == request_id and m['role'] == 'model' for m in messages):
+                    pass  # A previous save succeeded but its acknowledgement was lost.
+                elif (old and not old.get('submitted_at') and messages
+                      and messages[-1]['role'] == 'user'
+                      and messages[-1].get('request_id') == request_id):
+                    text, metadata = answer
+                    store.save(classroom, seat, {**old, 'messages': [*messages, {
+                        'id': str(uuid.uuid4()), 'role': 'model', 'text': text,
+                        'request_id': request_id, **metadata}]})
+                else:
+                    continue  # Keep unresolved data; do not discard an unsaved answer.
+                with self._guard:
+                    self._answers.pop(cache_key, None)
+            except (OSError, ValueError):
+                continue
+            finally:
+                student_lock.release()
+
     def operate(self, group, classroom, seat, data, action):
         with self.lock(group, classroom, seat):
             store = self.stores[group]
@@ -153,9 +189,12 @@ class ChatService:
                 old = store.save(classroom, seat, {**old, 'messages': messages})
             cache_key = (group, classroom, seat, request_id)
             if cache_key not in self._answers:
-                self._answers[cache_key] = self.ai.reply(group, old['stance'], old['messages'])
+                generated = self.ai.reply(group, old['stance'], old['messages'])
+                with self._guard:
+                    self._answers[cache_key] = generated
             answer, metadata = self._answers[cache_key]
             result = store.save(classroom, seat, {**old, 'messages': [*old['messages'], {
                 'id': str(uuid.uuid4()), 'role': 'model', 'text': answer, 'request_id': request_id, **metadata}]})
-            self._answers.pop(cache_key, None)
+            with self._guard:
+                self._answers.pop(cache_key, None)
             return result

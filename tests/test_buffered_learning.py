@@ -19,8 +19,12 @@ class GoogleFake:
                 return {'sheets': []}
             group = kwargs['params']['ranges'][1]
             rows = self.rows.get(group, {})
+            import re
+            match = re.search(r'!A(\d+):J(\d+)$', kwargs['params']['ranges'])
+            indexes = (range(int(match[1]) - 1, int(match[2])) if match
+                       else range(1, max(rows, default=0) + 1))
             return {'sheets': [{'data': [{'rowData': [
-                {'values': copy.deepcopy(rows.get(i, []))} for i in range(1, max(rows, default=0) + 1)]}]}]}
+                {'values': copy.deepcopy(rows.get(i, []))} for i in indexes]}]}]}
         requests = kwargs['json']['requests']
         (self.setup_calls if any('repeatCell' in r for r in requests) else self.calls).append(copy.deepcopy(requests))
         for request in requests:

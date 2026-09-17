@@ -43,6 +43,18 @@ def create_app(roster=None, secure_cookie=None, learning_store=None, chat_servic
     chat_service = chat_service or ChatService(stores={g: BufferedLearningStore(
         coordinator, interface=g, validator=validate_chat) for g in ('A', 'B')})
 
+    def cleanup_sessions():
+        now = time.monotonic()
+        with lock:
+            for key, (_, expires) in list(sessions.items()):
+                if expires <= now:
+                    sessions.pop(key, None)
+            for key, (_, expires) in list(attempts.items()):
+                if expires <= now:
+                    attempts.pop(key, None)
+
+    coordinator.maintenance.extend([cleanup_sessions, chat_service.cleanup])
+
     def limited(keys):
         now = time.monotonic()
         with lock:
@@ -150,7 +162,12 @@ def create_app(roster=None, secure_cookie=None, learning_store=None, chat_servic
         if request.headers.get('x-learning-client') != '1':
             return JSONResponse({'message': '請從登入頁面操作。'}, status_code=403)
         with lock:
-            sessions.pop(request.cookies.get(COOKIE), None)
+            entry = sessions.pop(request.cookies.get(COOKIE), None)
+        if entry:
+            student = entry[0]
+            store = learning_store if student.interface == 'C' else chat_service.stores.get(student.interface)
+            if hasattr(store, 'release'):
+                store.release(student.classroom, student.seat)
         response = JSONResponse({'ok': True})
         response.delete_cookie(COOKIE, path='/', secure=secure_cookie, httponly=True, samesite='strict')
         return response

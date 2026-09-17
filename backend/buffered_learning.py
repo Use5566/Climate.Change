@@ -8,6 +8,7 @@ import copy
 import json
 import logging
 import threading
+import time
 from .sheet_learning import SheetLearningStore, HEADERS
 
 PROGRESS_HEADERS = ['紀錄時間', '班級', '座號', '介面', '立場', '提交狀態',
@@ -36,6 +37,7 @@ class SyncCoordinator:
         self.stores = []
         self.stop_event = threading.Event()
         self.thread = None
+        self.maintenance = []
 
     def flush(self):
         # One lock serializes snapshots, acknowledgements and updates, including
@@ -62,9 +64,22 @@ class SyncCoordinator:
                 store.failed = True
             raise
         for store, key, (work, _) in batch:
-            store.confirmed[key] = copy.deepcopy(work)
+            store.confirmed[key] = store.receipt(work)
             store.dirty.pop(key, None)
             store.failed = False
+            if work.get('submitted_at') or key in store.release_pending:
+                store.release(*key)
+
+    def cleanup(self):
+        # Run even when Google is unavailable. Never evict unacknowledged work.
+        with self.lock:
+            for store in self.stores:
+                store.cleanup()
+        for callback in self.maintenance:
+            try:
+                callback()
+            except OSError:
+                logging.getLogger('learning').warning('Learning maintenance deferred; unsaved data retained')
 
     def start(self):
         if self.thread and self.thread.is_alive():
@@ -76,6 +91,8 @@ class SyncCoordinator:
                     self.flush()
                 except OSError:
                     logging.getLogger('learning').warning('Learning sync failed; latest drafts retained for retry')
+                finally:
+                    self.cleanup()
         self.thread = threading.Thread(target=loop, daemon=True, name='learning-sync')
         self.thread.start()
 
@@ -90,6 +107,8 @@ class SyncCoordinator:
 
 
 class BufferedLearningStore(SheetLearningStore):
+    idle_seconds = 300
+
     def __init__(self, coordinator, **kwargs):
         super().__init__(**kwargs)
         self.headers = PROGRESS_HEADERS
@@ -98,6 +117,8 @@ class BufferedLearningStore(SheetLearningStore):
         self.coordinator = coordinator
         self._lock = coordinator.lock
         self.cache, self.confirmed, self.dirty = {}, {}, {}
+        self.last_used = {}
+        self.release_pending = set()
         self.row_map = {}
         self.loaded = False
         self.failed = False
@@ -108,8 +129,8 @@ class BufferedLearningStore(SheetLearningStore):
         if classroom not in ('601', '602', '603', '604', '605') or seat not in tuple(f'{i:02}' for i in range(1, 33)):
             raise ValueError('Invalid student')
 
-    def _load_rows(self, tab):
-        result = self.request('GET', params={'ranges': f"'{tab}'!A2:K",
+    def _load_rows(self, tab, cells='A2:K'):
+        result = self.request('GET', params={'ranges': f"'{tab}'!{cells}",
             'includeGridData': 'true', 'fields': 'sheets.data.rowData.values(effectiveValue,note)'})
         return [r.get('values', []) for s in result.get('sheets', [])
                 for g in s.get('data', []) for r in g.get('rowData', [])]
@@ -202,14 +223,51 @@ class BufferedLearningStore(SheetLearningStore):
                 'properties': {'sheetId': progress['sheetId'], 'hidden': True}, 'fields': 'hidden'}})
         self.request('POST', ':batchUpdate', json={'requests': requests})
         self.row_map = {key: index for index, key in enumerate(current, 1)}
-        self.cache = current
-        self.confirmed = copy.deepcopy(self.cache)
+        # Keep only row addresses and tiny receipts after migration. Load full
+        # records on demand, rather than retaining the entire class forever.
+        self.confirmed = {key: self.receipt(work) for key, work in current.items()}
         self.loaded = True
+
+    @staticmethod
+    def receipt(work):
+        return {'revision': work['revision'], 'updated_at': work['updated_at']}
+
+    def release(self, classroom, seat):
+        with self._lock:
+            key = classroom, seat
+            if key in self.dirty:
+                self.release_pending.add(key)
+                return
+            self.cache.pop(key, None)
+            self.last_used.pop(key, None)
+            self.release_pending.discard(key)
+
+    def cleanup(self):
+        with self._lock:
+            now = time.monotonic()
+            for key, used in list(self.last_used.items()):
+                if now - used >= self.idle_seconds:
+                    self.release(*key)
 
     def latest(self, classroom, seat):
         self.validate_student(classroom, seat)
         self._load()
-        return copy.deepcopy(self.cache.get((classroom, seat)))
+        key = classroom, seat
+        if key not in self.cache and key in self.row_map:
+            row = self.row_map[key] + 1
+            rows = self._load_rows(self.tab, f'A{row}:J{row}')
+            record = self._decode(rows[0]) if len(rows) == 1 else None
+            if not record or record[0] != key:
+                raise OSError('Learning row moved or missing')
+            work = record[1]
+            self.confirmed[key] = self.receipt(work)
+            if work.get('submitted_at'):
+                return work  # Completed records need no resident full copy.
+            self.cache[key] = work
+        if key in self.cache:
+            self.last_used[key] = time.monotonic()
+            self.release_pending.discard(key)
+        return copy.deepcopy(self.cache.get(key))
 
     def read(self, classroom, seat):
         with self._lock:
@@ -224,7 +282,10 @@ class BufferedLearningStore(SheetLearningStore):
         key = classroom, seat
         self.row_map.setdefault(key, len(self.row_map) + 1)
         self.cache[key] = copy.deepcopy(work)
-        self.dirty[key] = (copy.deepcopy(work), {'updateCells': {
+        self.last_used[key] = time.monotonic()
+        self.release_pending.discard(key)
+        # Internal snapshots are replaced, never mutated or returned directly.
+        self.dirty[key] = (self.cache[key], {'updateCells': {
             'start': {'sheetId': self._sheet_id, 'rowIndex': self.row_map[key], 'columnIndex': 0},
             'rows': [{'values': cells}], 'fields': 'userEnteredValue,note'}})
 
