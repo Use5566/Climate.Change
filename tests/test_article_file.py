@@ -18,7 +18,8 @@ def test_utf8_bom_paragraphs_bold_literal_html_and_stable_newlines(tmp_path):
     path.write_bytes(text.replace('\n', '\r\n').encode('utf-8'))
     assert article.load_article(path) == first
     path.write_text(text + '修改', encoding='utf-8')
-    assert article.load_article(path)['id'] != first['id']
+    assert article.load_article(path)['id'] == first['id'] == 'c-reading-v1'
+    assert article.load_article(path)['paragraphs'] != first['paragraphs']
 
 
 @pytest.mark.parametrize('content', [b'', b'  \n\n', b'\xff\xff', ('字' * 20001).encode()],
@@ -33,16 +34,13 @@ def test_invalid_material_rejected(tmp_path, content):
 
 
 @pytest.mark.parametrize('storage', ['sqlite', 'buffered'])
-def test_article_edit_keeps_previous_student_and_new_students_get_new_text(tmp_path, monkeypatch, storage):
-    if storage == 'sqlite':
-        store = LearningStore(tmp_path / 'learning.db')
-    else:
-        store = store_for(GoogleFake())
-    old = store.save('601', '01', draft())
-    path = tmp_path / 'new.txt'
-    path.write_text('新版科學文章第一段。\n\n第二段包含新證據。', encoding='utf-8')
-    updated = article.load_article(path)
-    monkeypatch.setattr(article, '_ARTICLE', updated)
+def test_all_students_read_same_file_even_with_saved_snapshot(tmp_path, monkeypatch, storage):
+    store = LearningStore(tmp_path / 'learning.db') if storage == 'sqlite' else store_for(GoogleFake())
+    store.save('601', '01', draft())
+    path = tmp_path / 'article.txt'
+    path.write_text('固定科學文章第一段。\n\n第二段包含科學證據。', encoding='utf-8')
+    current = article.load_article(path)
+    monkeypatch.setattr(article, '_ARTICLE', current)
     if storage == 'buffered':
         store.coordinator.flush()
         store.release('601', '01')
@@ -50,24 +48,17 @@ def test_article_edit_keeps_previous_student_and_new_students_get_new_text(tmp_p
     from backend.app import create_app
     from backend.roster import Roster
     client = TestClient(create_app(Roster(lambda: ROWS), False, learning_store=store))
-    login(client)
-    restored = client.get('/api/c/work').json()
-    assert restored['article']['id'] == old['article_id']
-    assert restored['article']['paragraphs'][0]['text'] == old['article_snapshot'][0]
-    assert restored['work']['highlight_texts'] == old['highlight_texts']
-    saved = client.post('/api/c/draft', headers=HEADERS, json=draft(revision=1, inference='繼續舊文章'))
-    assert saved.status_code == 200
-    assert saved.json()['work']['article_snapshot'] == old['article_snapshot']
-    # A stale page cannot silently apply offsets to the changed text.
-    with pytest.raises(InvalidWork):
-        store.save('601', '02', draft())
-    login(client, '02')
-    assert client.get('/api/c/work').json()['article'] == updated
-    saved = client.post('/api/c/draft', headers=HEADERS, json=draft(
-        seat='02', article_id=updated['id'], highlights=[{'p': 1, 'start': 0, 'end': 3}]))
-    assert saved.status_code == 200
-    assert saved.json()['work']['highlight_texts'] == ['第二段']
-    assert saved.json()['work']['article_snapshot'] == [p['text'] for p in updated['paragraphs']]
+    for seat in ('01', '02'):
+        login(client, seat)
+        response = client.get('/api/c/work')
+        assert response.status_code == 200
+        assert response.json()['article'] == current
+        saved = client.post('/api/c/draft', headers=HEADERS, json=draft(
+            seat=seat, revision=1 if seat == '01' else 0,
+            highlights=[{'p': 1, 'start': 0, 'end': 3}]))
+        assert saved.status_code == 200
+        assert saved.json()['work']['highlight_texts'] == ['第二段']
+        assert saved.json()['work']['article_snapshot'] == [p['text'] for p in current['paragraphs']]
     assert client.get('/prompts/interface_c.txt').status_code == 404
 
 
@@ -78,11 +69,13 @@ def test_legacy_google_note_survives_restart_and_submission():
     store.coordinator.flush()
     cells = google.rows['C'][1]
     envelope = json.loads(cells[8]['note'])
-    envelope['work']['article_id'] = 'c-reading-v1'
+    legacy_id = 'c-reading-' + 'a' * 64
+    envelope['work']['article_id'] = legacy_id
     cells[8]['note'] = json.dumps(envelope, ensure_ascii=False)
     restarted = store_for(google)
     restored = restarted.read('601', '01')
-    assert restored['article_id'] == 'c-reading-v1'
+    assert restored['article_id'] == legacy_id
+    assert article.article_for_work(restored) == article.article_data()
     assert restored['highlight_texts'] == original['highlight_texts']
     result = restarted.save('601', '01', draft(article_id='c-reading-v1', revision=1,
         stage='summary', inference='原文章的推論'), submit=True)

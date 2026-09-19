@@ -115,6 +115,60 @@ def test_missing_recovery_row_is_an_error_not_a_new_empty_attempt():
         store.read('601', '01')
 
 
+@pytest.mark.parametrize('group', ['A', 'B'])
+@pytest.mark.parametrize('interruption', ['logout_saved', 'logout_pending', 'browser_closed', 'server_restart'])
+def test_chat_transcript_highlights_and_inference_resume(group, interruption):
+    from fastapi.testclient import TestClient
+    from backend.app import create_app
+    from backend.roster import Roster
+    from tests.test_chat import HEADERS
+    google, ai = GoogleFake(), FakeAI()
+    rows = [['班級', '座號', '密碼', '介面'], ['601', '01', '01234', group]]
+    def setup():
+        store = store_for(google, group=group)
+        store.validator = validate_chat
+        service = ChatService(stores={group: store}, ai=ai)
+        app = create_app(Roster(lambda: rows), False, chat_service=service)
+        return store, app, TestClient(app)
+    store, app, client = setup()
+    credentials = {'classroom': '601', 'seat': '01', 'password': '01234'}
+    def login_client():
+        assert client.post('/api/login', headers=HEADERS, json=credentials).status_code == 200
+    login_client()
+    prefix = '/api/' + group.lower()
+    data = draft(article_id=store.article_id, highlights=[], stance='反對')
+    work = client.post(prefix+'/draft', headers=HEADERS, json=data).json()['work']
+    response = client.post(prefix+'/message', headers=HEADERS, json={
+        **data, 'revision': work['revision'], 'request_id': str(uuid.uuid4()), 'text': '能源與氣候有什麼關係？'})
+    assert response.status_code == 200
+    work = response.json()['work']
+    saved = client.post(prefix+'/draft', headers=HEADERS, json={
+        **data, 'revision': work['revision'], 'highlights': [{'p': 1, 'start': 0, 'end': 4}],
+        'inference': '我尚未完成的推論'}).json()['work']
+    if interruption != 'logout_pending':
+        store.coordinator.flush()
+    if interruption.startswith('logout'):
+        assert client.post('/api/logout', headers=HEADERS).status_code == 200
+        assert client.get(prefix+'/work').status_code == 401
+    elif interruption == 'browser_closed':
+        client = TestClient(app)  # A fresh browser with no session cookie.
+    else:
+        store, app, client = setup()  # No surviving process-local learning cache.
+    login_client()
+    restored = client.get(prefix+'/work').json()['work']
+    assert restored == saved
+    assert restored['highlight_texts'] == ['節約能源']
+    assert len(restored['messages']) == 2 and len(ai.calls) == 1
+    followup = client.post(prefix+'/message', headers=HEADERS, json={
+        **data, 'revision': restored['revision'], 'request_id': str(uuid.uuid4()), 'text': '剛剛那個再解釋一次'})
+    assert followup.status_code == 200
+    continued = followup.json()['work']
+    assert len(continued['messages']) == 4
+    assert continued['highlights'] == saved['highlights']
+    assert continued['inference'] == saved['inference']
+    assert ai.calls[-1][2][:2] == saved['messages']
+
+
 def test_generated_answer_retried_without_new_ai_call_and_unsaved_answer_retained():
     google = GoogleFake()
     store = store_for(google, group='A')

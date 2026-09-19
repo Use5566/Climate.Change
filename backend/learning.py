@@ -63,9 +63,16 @@ def validated(data, article_id=ARTICLE_ID, paragraphs=None):
 
 
 def validated_c(data, previous=None):
-    # Only server-owned recovery metadata may choose an older article.
-    article = article_for_work(previous)
-    return validated(data, article['id'], article['paragraphs'])
+    article = article_data()
+    payload = data
+    # Compatibility with already saved hash IDs; never select an old article.
+    if previous and data.get('article_id') == previous.get('article_id'):
+        payload = {**data, 'article_id': article['id']}
+    clean = validated(payload, article['id'], article['paragraphs'])
+    if previous:
+        # Keep the existing storage key so SQLite does not create a second row.
+        clean['article_id'] = previous['article_id']
+    return clean
 
 
 class LearningStore:
