@@ -58,3 +58,27 @@ vm.runInContext('updateChatControls()', context);
 assert.equal(elements['#question'].readOnly,false);
 assert.equal(elements['#send-message'].disabled,false);
 console.log('8 chat control assertions passed: tenth-turn limit and pending retry.');
+
+const renderSource = chatSource.slice(chatSource.indexOf('function renderArticle()'), chatSource.indexOf('function updateSelectionButton()'));
+function node(tag) {return {tag, children:[], dataset:{}, append(...items){this.children.push(...items)},
+  replaceChildren(fragment){this.children=[...fragment.children]}};}
+const ui = {};
+const rendering = {work:{stance:'支持',messages:[],highlights:[]},article:{paragraphs:[]},selected:[],
+  document:{createDocumentFragment:()=>node('fragment'),createElement:node,createTextNode:text=>({text})},
+  $:key=>ui[key]??=node(key),updateSelectionButton(){},excerpt};
+vm.createContext(rendering);
+vm.runInContext(renderSource, rendering);
+for (const stance of ['支持','反對']) {
+  rendering.work.stance=stance;
+  vm.runInContext('renderArticle(); renderArticle();', rendering);
+  assert.equal(ui['#article'].children.length,2);
+  assert.equal(ui['#article'].children[1].textContent,`請先說明一下你${stance}的理由。`);
+  assert.equal(rendering.work.messages.length,0);
+}
+rendering.work.messages=[{role:'user',text:'我的理由'}];
+rendering.work.highlights=[{p:0,start:0,end:2}];
+rendering.article.paragraphs=[{text:'我的理由',parts:[{text:'我的理由',bold:false}]}];
+vm.runInContext('renderArticle()', rendering);
+assert.equal(ui['#article'].children[3].dataset.paragraph,'0');
+assert.equal(ui['#article'].children[3].children[0].tag,'mark');
+console.log('8 opening guidance assertions passed: stance, no extra turn, no duplicate, stable highlight indices.');

@@ -14,7 +14,8 @@
   <div id="loading" class="loading">正在載入你的學習內容…</div>
   <main id="main" hidden>
     <section id="stance-view" class="stance-view" hidden aria-labelledby="stance-title">
-      <p class="eyebrow">我的觀點</p><h1 id="stance-title" tabindex="-1">你支持哪一個立場？</h1>
+      <p class="eyebrow">我的觀點</p><h1 id="stance-title" tabindex="-1">如果政府為了改善氣候變遷及減少碳排放，要訂定規則限制學生在校使用冷氣的方式，你支持或反對呢？</h1>
+      <div class="stance-examples"><p>可能的限制方法如下：</p><ol><li>限制每天開啟冷氣的時間</li><li>限制冷氣使用時的溫度</li><li>限制冷氣使用的月份</li></ol></div>
       <p class="muted">選擇你的立場，接著與 AI 對話。</p>
       <div class="choices"><button data-stance="支持" class="choice"><span>支持</span></button><button data-stance="反對" class="choice alternative"><span>反對</span></button></div>
     </section>
@@ -24,7 +25,7 @@
       <article id="article" aria-label="對話紀錄"></article>
 <p id="chat-count" class="muted" role="status">已提問 0 / 10 次</p>
 <p id="chat-status" role="status"></p>
-<form id="chat-form" class="chat-composer"><label for="question">你的問題</label><div><textarea id="question" rows="2" maxlength="1000" placeholder="輸入你的想法或問題…" required></textarea><button id="send-message" type="submit">傳送</button></div><p class="muted">AI 回覆可能有誤，請思考它的理由與證據。請勿輸入姓名或密碼。</p></form>
+<form id="chat-form" class="chat-composer"><label for="question">你的想法或問題</label><div><textarea id="question" rows="2" maxlength="1000" placeholder="先說明你支持或反對的理由…" required></textarea><button id="send-message" type="submit">傳送</button></div><p class="muted">AI 回覆可能有誤，請思考它的理由與證據。請勿輸入姓名或密碼。</p></form>
       <footer class="reading-footer"><span>選到已劃記的文字，可取消該範圍的劃記。</span><button id="reading-done">對話完畢</button></footer>
     </section>
     <section id="summary-view" class="summary-view" hidden aria-labelledby="summary-title">

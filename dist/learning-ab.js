@@ -67,6 +67,15 @@ function show(stage, focus = true) {
 }
 function renderArticle() {
   const fragment = document.createDocumentFragment();
+  const openingLabel = document.createElement('div');
+  openingLabel.className = 'speaker';
+  openingLabel.textContent = 'AI 學習夥伴';
+  const opening = document.createElement('div');
+  opening.className = 'bubble ai-bubble';
+  opening.textContent = `請先說明一下你${work.stance}的理由。`;
+  // Fixed guidance is outside message indices: no extra turn, token charge,
+  // or change to saved highlight positions when students return.
+  fragment.append(openingLabel, opening);
   article.paragraphs.forEach((paragraph,p) => {
     const element = document.createElement('p'); element.dataset.paragraph = String(p);
     element.className = 'bubble ' + (work.messages[p].role === 'user' ? 'student-bubble' : 'ai-bubble');
@@ -95,7 +104,6 @@ function renderArticle() {
     fragment.append(element);
   });
   $('#article').replaceChildren(fragment);
-  if (!article.paragraphs.length) {const empty=document.createElement('div');empty.className='chat-empty';empty.textContent='從一個問題開始，一起探索你的想法。';$('#article').append(empty);}
   $('#highlight-count').textContent = `已劃記 ${work.highlights.length} 段`;
   selected=[]; updateSelectionButton();
 }
