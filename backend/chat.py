@@ -179,6 +179,8 @@ class ChatService:
             if previous and any(m.get('request_id') == request_id and m['role'] == 'model' for m in messages):
                 return old
             if not previous:
+                if sum(m['role'] == 'user' for m in messages) >= 10:
+                    raise InvalidWork('本次對話已達 10 次上限，請完成摘要與推論。')
                 if type(data.get('revision')) is not int or data['revision'] != old['revision']:
                     raise Conflict('對話進度已更新，請重新整理後再試。')
                 if messages and messages[-1]['role'] == 'user':

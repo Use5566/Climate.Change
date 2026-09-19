@@ -177,7 +177,7 @@ def create_app(roster=None, secure_cookie=None, learning_store=None, chat_servic
         if isinstance(result, JSONResponse):
             return result
         if result['student']['interface'] != 'C':
-            return JSONResponse({'message': '此學習介面僅供 C 組學生使用。'}, status_code=403)
+            return JSONResponse({'message': '請從登入頁面進入你的學習活動。'}, status_code=403)
         return result['student']
 
     @app.get('/learn/c')
@@ -186,7 +186,19 @@ def create_app(roster=None, secure_cookie=None, learning_store=None, chat_servic
         if isinstance(identity, JSONResponse):
             from fastapi.responses import RedirectResponse
             return RedirectResponse('/', status_code=303)
-        return FileResponse(DIST / 'learning-c.html')
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse('/learn', status_code=303)
+
+    @app.get('/learn')
+    async def assigned_learning_page(request: Request):
+        from fastapi.responses import RedirectResponse
+        result = await session(request)
+        if isinstance(result, JSONResponse):
+            return RedirectResponse('/', status_code=303)
+        group = result['student']['interface']
+        if group not in ('A', 'B', 'C'):
+            return RedirectResponse('/', status_code=303)
+        return FileResponse(DIST / ('learning-c.html' if group == 'C' else 'learning-ab.html'))
 
     @app.get('/learning-c.js')
     def learning_script():
@@ -260,7 +272,8 @@ def create_app(roster=None, secure_cookie=None, learning_store=None, chat_servic
         if isinstance(identity, JSONResponse):
             from fastapi.responses import RedirectResponse
             return RedirectResponse('/', status_code=303)
-        return FileResponse(DIST / 'learning-ab.html')
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse('/learn', status_code=303)
 
     @app.get('/learning-ab.js')
     def chat_script():

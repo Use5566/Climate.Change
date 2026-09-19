@@ -11,7 +11,8 @@ def configured(monkeypatch, tmp_path):
     path = tmp_path / 'teacher.txt'
     path.write_text('SCI-001 教材測試：節約能源。', encoding='utf-8')
     monkeypatch.setenv('GEMINI_KNOWLEDGE_MODE', 'explicit')
-    monkeypatch.setenv('GEMINI_KNOWLEDGE_PATH', str(path))
+    monkeypatch.setattr('backend.knowledge_cache.KNOWLEDGE_PATH', path)
+    monkeypatch.delenv('GEMINI_KNOWLEDGE_PATH', raising=False)
     monkeypatch.setenv('GEMINI_CACHE_TTL_SECONDS', '3600')
     monkeypatch.setenv('GEMINI_API_KEY', 'fake-key')
     monkeypatch.setenv('GEMINI_MODEL', 'test-model')
@@ -144,3 +145,58 @@ def test_api_errors_are_redacted_and_cool_down(monkeypatch):
     with pytest.raises(KnowledgeUnavailable):
         cache.request('secret', 'GET', 'cachedContents')
     assert len(calls) == 1
+
+
+def test_old_render_path_cannot_override_repository_material(configured, monkeypatch, tmp_path):
+    old = tmp_path / 'old-secret.txt'
+    old.write_text('舊版教材不應被讀取', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_KNOWLEDGE_PATH', str(old))
+    monkeypatch.chdir(tmp_path)
+    api, cache = CacheAPI(), KnowledgeCache()
+    cache.request = api.request
+    for group in ('A', 'B'):
+        cache.prepare('key', 'test-model', group, '指令')
+    payloads = [p for m, path, p in api.calls if path == 'cachedContents']
+    assert len(payloads) == 2
+    assert all(configured.read_text(encoding='utf-8') in str(p) for p in payloads)
+    assert all('舊版教材' not in str(p) for p in payloads)
+    # Do not silently fall back to a stale secret when the public file is missing.
+    configured.unlink()
+    with pytest.raises(KnowledgeUnavailable):
+        cache.prepare('key', 'test-model', 'A', '指令')
+
+
+def test_moving_identical_material_preserves_cache_version(configured, monkeypatch, tmp_path):
+    api, cache = CacheAPI(), KnowledgeCache()
+    cache.request = api.request
+    first, digest = cache.prepare('key', 'test-model', 'A', '指令')
+    moved = tmp_path / 'science-knowledge.txt'
+    moved.write_bytes(configured.read_bytes())
+    monkeypatch.setattr('backend.knowledge_cache.KNOWLEDGE_PATH', moved)
+    second, second_digest = cache.prepare('key', 'test-model', 'A', '指令')
+    assert first['name'] == second['name'] and digest == second_digest
+    assert len(api.entries) == 1
+
+
+def test_legacy_enable_and_explicit_off(monkeypatch):
+    monkeypatch.delenv('GEMINI_KNOWLEDGE_MODE', raising=False)
+    monkeypatch.setenv('GEMINI_KNOWLEDGE_PATH', '/etc/secrets/unused.txt')
+    assert KnowledgeCache.enabled()
+    monkeypatch.setenv('GEMINI_KNOWLEDGE_MODE', 'off')
+    assert not KnowledgeCache.enabled()
+    monkeypatch.delenv('GEMINI_KNOWLEDGE_PATH')
+    monkeypatch.setenv('GEMINI_KNOWLEDGE_MODE', 'explicit')
+    assert KnowledgeCache.enabled()
+
+
+def test_teacher_cli_uses_same_bundled_source(configured, monkeypatch, capsys):
+    from backend.knowledge_cache import main
+    api = CacheAPI()
+    monkeypatch.setattr(KnowledgeCache, 'request', lambda self, *a, **kw: api.request(*a, **kw))
+    assert main() == 0
+    created = [p for m, path, p in api.calls if path == 'cachedContents']
+    assert len(created) == 2
+    assert all(configured.read_text(encoding='utf-8') in str(p) for p in created)
+    output = capsys.readouterr().out
+    assert 'expire_time' in output and 'fake-key' not in output
+    assert configured.read_text(encoding='utf-8') not in output

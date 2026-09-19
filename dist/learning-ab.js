@@ -1,5 +1,5 @@
 import {toggleRanges, isCovered, excerpt, installInferenceCopyGuard, highlightsWithinLimit} from '/highlights.js';
-const group = location.pathname.split('/').pop();
+let group;
 const $ = selector => document.querySelector(selector);
 const views = {stance:$('#stance-view'), reading:$('#reading-view'), summary:$('#summary-view'), complete:$('#complete-view')};
 let article, student, work, selected = [], timer, changes = 0, savedChanges = 0, queue = Promise.resolve(), submitting = false;
@@ -130,7 +130,7 @@ $('#toggle-highlight').addEventListener('click',() => {
   if (!selected.length) return;
   const next = toggleRanges(work.highlights,selected);
   if (!isCovered(work.highlights,selected) && !highlightsWithinLimit(next,article.paragraphs)) {
-    error('每段劃記最多 30 字（不含標點與空白），請縮短選取範圍。');
+    error('每段劃記最多 100 字（不含標點與空白），請縮短選取範圍。');
     return;
   }
   error('');
@@ -182,6 +182,9 @@ $('#finish-logout').addEventListener('click',async () => {
 window.addEventListener('beforeunload',e => {if(changes!==savedChanges || submitting) {e.preventDefault(); e.returnValue='';}});
 async function load() {
   try {
+    const session=await api('/api/session');
+    group=session.student.interface?.toLowerCase();
+    if (!['a','b'].includes(group)) {location.assign('/learn'); return;}
     const data=await api(`/api/${group}/work`); article=data.article; student=data.student;
     work=data.work || {messages:[],stance:null,stage:'stance',highlights:[],inference:'',revision:0,submitted_at:null};
     $('#identity').textContent=`${student.classroom} 班・${student.seat} 號`;
@@ -200,10 +203,13 @@ function pendingQuestion() {
 }
 function updateChatControls() {
   const pending=pendingQuestion();
-  $('#question').readOnly=Boolean(pending) || chatBusy;
+  const turns=(work.messages || []).filter(m=>m.role==='user').length;
+  const atLimit=turns>=10 && !pending;
+  $('#chat-count').textContent=`已提問 ${turns} / 10 次` + (atLimit ? '，請完成摘要與推論。' : '');
+  $('#question').readOnly=Boolean(pending) || chatBusy || atLimit;
   if(pending) $('#question').value=pending.text;
   $('#send-message').textContent=pending ? '重試回覆' : '傳送';
-  $('#send-message').disabled=chatBusy;
+  $('#send-message').disabled=chatBusy || atLimit;
   $('#reading-done').disabled=chatBusy;
   updateSelectionButton();
 }
@@ -214,6 +220,9 @@ $('#chat-form').addEventListener('submit',async e=>{
   const text=$('#question').value.trim();
   if(!text) return;
   const pending=pendingQuestion();
+  if (!pending && (work.messages || []).filter(m=>m.role==='user').length>=10) {
+    error('本次對話已達 10 次上限，請完成摘要與推論。'); return;
+  }
   const requestId=pending?.request_id || (retryRequest?.text===text ? retryRequest.id : crypto.randomUUID());
   retryRequest={id:requestId,text};
   chatBusy=true; submitting=true; updateChatControls(); $('#chat-status').textContent='AI 正在思考…'; error('');

@@ -124,7 +124,7 @@ $('#toggle-highlight').addEventListener('click',() => {
   if (!selected.length) return;
   const next = toggleRanges(work.highlights,selected);
   if (!isCovered(work.highlights,selected) && !highlightsWithinLimit(next,article.paragraphs)) {
-    error('每段劃記最多 30 字（不含標點與空白），請縮短選取範圍。');
+    error('每段劃記最多 100 字（不含標點與空白），請縮短選取範圍。');
     return;
   }
   error('');

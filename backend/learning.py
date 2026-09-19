@@ -22,8 +22,8 @@ class Conflict(ValueError):
 def check_highlight_limit(clean):
     for text in clean['highlight_texts']:
         count = sum(not ch.isspace() and not unicodedata.category(ch).startswith('P') for ch in text)
-        if count > 30:
-            raise InvalidWork('每段劃記最多 30 字（不含標點與空白），請縮短劃記後再儲存。')
+        if count > 100:
+            raise InvalidWork('每段劃記最多 100 字（不含標點與空白），請縮短劃記後再儲存。')
 
 
 def validated(data, article_id=ARTICLE_ID, paragraphs=None):

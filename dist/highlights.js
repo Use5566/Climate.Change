@@ -29,7 +29,7 @@ export function excerpt(text, start, end) { return Array.from(text).slice(start,
 
 export function highlightLength(text) { return Array.from(text.replace(/[\p{P}\s]/gu, '')).length; }
 export function highlightsWithinLimit(ranges, paragraphs) {
-  return mergeRanges(ranges).every(h => highlightLength(excerpt(paragraphs[h.p].text, h.start, h.end)) <= 30);
+  return mergeRanges(ranges).every(h => highlightLength(excerpt(paragraphs[h.p].text, h.start, h.end)) <= 100);
 }
 
 export function installInferenceCopyGuard(isActive) {

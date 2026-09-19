@@ -14,10 +14,10 @@ assert.equal(excerpt('甲🌏乙丙',1,3),'🌏乙');
 console.log('8 highlight assertions passed: exact toggle, partial removal, overlaps, adjacency, cross-paragraph, Unicode.');
 assert.equal(highlightLength('甲，乙。「丙」！ \n'), 3);
 assert.equal(highlightLength('ABC123🌏'), 7);
-const paragraphs = [{text:'甲'.repeat(30)+'，。！'+'乙'}];
-assert(highlightsWithinLimit([r(0,33)], paragraphs));
-assert(!highlightsWithinLimit([r(0,34)], paragraphs));
-assert(!highlightsWithinLimit([r(0,20),r(20,34)], paragraphs));
+const paragraphs = [{text:'甲'.repeat(100)+'，。！'+'乙'}];
+assert(highlightsWithinLimit([r(0,103)], paragraphs));
+assert(!highlightsWithinLimit([r(0,104)], paragraphs));
+assert(!highlightsWithinLimit([r(0,20),r(20,104)], paragraphs));
 const handlers = {};
 globalThis.document = {addEventListener: (type, handler) => {handlers[type]=handler;}};
 let active = false;
@@ -33,4 +33,28 @@ for (const key of ['c','x']) {
   handlers.keydown({key,ctrlKey:true,preventDefault:()=>{prevented=true;}});
   assert(prevented);
 }
-console.log('15 additional assertions passed: 30-character limits, punctuation, merging, and summary copy guards.');
+console.log('15 additional assertions passed: 100-character limits, punctuation, merging, and summary copy guards.');
+
+const vm = await import('node:vm');
+const chatSource = await fs.readFile(new URL('../dist/learning-ab.js',import.meta.url),'utf8');
+const controlsSource = chatSource.slice(chatSource.indexOf('function pendingQuestion()'), chatSource.indexOf('let retryRequest=null;'));
+const elements = {};
+const context = {work:{messages:[]}, chatBusy:false, updateSelectionButton(){},
+  $: key => elements[key] ??= {}};
+vm.createContext(context);
+vm.runInContext(controlsSource, context);
+context.work.messages = Array.from({length:20},(_,i)=>({role:i%2 ? 'model':'user',text:'內容'}));
+vm.runInContext('updateChatControls()', context);
+assert.equal(elements['#send-message'].disabled,true);
+assert.equal(elements['#question'].readOnly,true);
+assert.equal(elements['#reading-done'].disabled,false);
+assert(elements['#chat-count'].textContent.includes('10 / 10'));
+context.work.messages.pop(); // Tenth question awaits retry.
+vm.runInContext('updateChatControls()', context);
+assert.equal(elements['#send-message'].disabled,false);
+assert.equal(elements['#send-message'].textContent,'重試回覆');
+context.work.messages.pop(); // Nine completed questions.
+vm.runInContext('updateChatControls()', context);
+assert.equal(elements['#question'].readOnly,false);
+assert.equal(elements['#send-message'].disabled,false);
+console.log('8 chat control assertions passed: tenth-turn limit and pending retry.');

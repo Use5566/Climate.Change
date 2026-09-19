@@ -136,8 +136,82 @@ def test_chat_store_rejects_overlong_highlights(group):
     store.article_id = f'chat-{group.lower()}-v1'
     store.validator = validate_chat
     data = {'article_id': f'chat-{group.lower()}-v1', 'stance': '支持', 'stage': 'reading',
-            'inference': '', 'revision': 0, 'messages': [{'role': 'user', 'text': '甲' * 31}],
-            'highlights': [{'p': 0, 'start': 0, 'end': 31}]}
-    with pytest.raises(InvalidWork, match='30'):
+            'inference': '', 'revision': 0, 'messages': [{'role': 'user', 'text': '甲' * 101}],
+            'highlights': [{'p': 0, 'start': 0, 'end': 101}]}
+    with pytest.raises(InvalidWork, match='100'):
         store.save('601', '01', data)
     assert store.rows == []
+
+
+@pytest.mark.parametrize('group,seat', [('a','01'), ('b','02')])
+def test_ten_questions_allow_tenth_retry_but_reject_eleventh(group, seat):
+    c, service, ai = fixture()
+    login(c, seat)
+    data = draft(group, seat)
+    work = c.post(f'/api/{group}/draft', headers=HEADERS, json=data).json()['work']
+    for index in range(10):
+        question = {**data, 'revision': work['revision'], 'request_id': str(uuid.uuid4()), 'text': f'問題{index}'}
+        if index == 9:
+            ai.fail = True
+            assert c.post(f'/api/{group}/message', headers=HEADERS, json=question).status_code == 503
+            ai.fail = False
+        response = c.post(f'/api/{group}/message', headers=HEADERS, json=question)
+        assert response.status_code == 200
+        work = response.json()['work']
+    calls = len(ai.calls)
+    assert len(work['messages']) == 20
+    assert c.post(f'/api/{group}/message', headers=HEADERS, json=question).json()['work'] == work
+    assert len(ai.calls) == calls
+    rejected = c.post(f'/api/{group}/message', headers=HEADERS, json={
+        **question, 'revision': work['revision'], 'request_id': str(uuid.uuid4()), 'text': '第十一題'})
+    assert rejected.status_code == 400 and '10 次' in rejected.json()['message']
+    assert len(ai.calls) == calls
+    final = c.post(f'/api/{group}/submit', headers=HEADERS, json={
+        **data, 'revision': work['revision'], 'stage': 'summary', 'inference': '完成推論'})
+    assert final.status_code == 200
+
+
+@pytest.mark.parametrize('group,seat', [('a','01'), ('b','02')])
+@pytest.mark.parametrize('cached', [False, True])
+def test_followup_sends_previous_question_and_answer_to_gemini(monkeypatch, group, seat, cached):
+    monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-test-key')
+    monkeypatch.setenv('GEMINI_MODEL', 'test-model')
+    c, service, _ = fixture()
+    ai = Gemini()
+    monkeypatch.setattr(ai.knowledge, 'enabled', lambda: cached)
+    monkeypatch.setattr(ai.knowledge, 'prepare', lambda *a, **k: (
+        {'name': 'cachedContents/test', 'displayName': 'test'}, 'digest'))
+    service.ai = ai
+    calls = []
+    class Response:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {'candidates': [{'finishReason': 'STOP', 'content': {'parts': [{'text': '先前的科學解釋'}]}}]}
+    def post(url, **kwargs):
+        calls.append(kwargs['json'])
+        return Response()
+    monkeypatch.setattr('backend.chat.requests.post', post)
+    login(c, seat)
+    data = draft(group, seat)
+    work = c.post(f'/api/{group}/draft', headers=HEADERS, json=data).json()['work']
+    for text in ['什麼是溫室效應？', '剛剛那個再解釋一次']:
+        result = c.post(f'/api/{group}/message', headers=HEADERS, json={
+            **data, 'revision': work['revision'], 'request_id': str(uuid.uuid4()), 'text': text})
+        assert result.status_code == 200
+        work = result.json()['work']
+        c.post('/api/logout', headers=HEADERS)
+        login(c, seat)
+    contents = calls[1]['contents']
+    assert [m['role'] for m in contents] == ['user', 'model', 'user']
+    assert [m['parts'][-1]['text'] for m in contents] == ['什麼是溫室效應？', '先前的科學解釋', '剛剛那個再解釋一次']
+
+
+@pytest.mark.parametrize('group,seat', [('a','01'), ('b','02')])
+def test_generic_learning_url_hides_assignment(group, seat):
+    c, _, _ = fixture()
+    login(c, seat)
+    response = c.get(f'/learn/{group}')
+    assert response.url.path == '/learn'
+    assert '已提問 0 / 10 次' in response.text
+    assert f'{group.upper()} 組' not in response.text

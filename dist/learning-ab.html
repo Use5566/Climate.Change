@@ -20,8 +20,9 @@
     </section>
     <section id="reading-view" hidden aria-labelledby="reading-title">
       <div class="reading-tools"><div><span class="eyebrow">AI 學習夥伴</span><h1 id="reading-title" tabindex="-1">與 AI 對話</h1></div><span class="stance-chip"></span></div>
-      <div class="selection-tools"><p id="selection-hint">每段最多 30 字，不含標點與空白。拖曳選字；iPad 可長按調整範圍。</p><button id="toggle-highlight" class="small" disabled>先選取對話文字</button><span id="highlight-count">已劃記 0 段</span></div>
+      <div class="selection-tools"><p id="selection-hint">每段最多 100 字，不含標點與空白。拖曳選字；iPad 可長按調整範圍。</p><button id="toggle-highlight" class="small" disabled>先選取對話文字</button><span id="highlight-count">已劃記 0 段</span></div>
       <article id="article" aria-label="對話紀錄"></article>
+<p id="chat-count" class="muted" role="status">已提問 0 / 10 次</p>
 <p id="chat-status" role="status"></p>
 <form id="chat-form" class="chat-composer"><label for="question">你的問題</label><div><textarea id="question" rows="2" maxlength="1000" placeholder="輸入你的想法或問題…" required></textarea><button id="send-message" type="submit">傳送</button></div><p class="muted">AI 回覆可能有誤，請思考它的理由與證據。請勿輸入姓名或密碼。</p></form>
       <footer class="reading-footer"><span>選到已劃記的文字，可取消該範圍的劃記。</span><button id="reading-done">對話完畢</button></footer>

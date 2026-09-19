@@ -35,6 +35,8 @@ def test_permissions_and_spoofed_identity(tmp_path):
 
 def test_durable_draft_submission_and_isolation(tmp_path):
     db=tmp_path/'db.sqlite3'; c=client(db); login(c)
+    page = c.get('/learn/c')
+    assert page.url.path == '/learn' and '閱讀文章' in page.text
     r=c.post('/api/c/draft',headers=HEADERS,json=draft())
     assert r.status_code==200
     assert r.json()['work']['highlight_texts']==[article_data()['paragraphs'][0]['text'][:8]]
@@ -84,11 +86,11 @@ def test_render_requires_explicit_storage(monkeypatch):
 def test_highlight_limit_ignores_punctuation_and_checks_merged_spans():
     from backend.learning import validated, check_highlight_limit, InvalidWork
     import pytest
-    text = '甲' * 30 + '，。！ ' + '乙'
+    text = '甲' * 100 + '，。！ ' + '乙'
     data = {'article_id': 'test', 'stance': '支持', 'stage': 'reading',
-            'inference': '', 'highlights': [{'p': 0, 'start': 0, 'end': 34}]}
+            'inference': '', 'highlights': [{'p': 0, 'start': 0, 'end': 104}]}
     clean = validated(data, 'test', [{'text': text}])
     check_highlight_limit(clean)
-    data['highlights'] = [{'p': 0, 'start': 0, 'end': 20}, {'p': 0, 'start': 20, 'end': 35}]
-    with pytest.raises(InvalidWork, match='30'):
+    data['highlights'] = [{'p': 0, 'start': 0, 'end': 20}, {'p': 0, 'start': 20, 'end': 105}]
+    with pytest.raises(InvalidWork, match='100'):
         check_highlight_limit(validated(data, 'test', [{'text': text}]))

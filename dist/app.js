@@ -18,16 +18,14 @@ function message(text) {
 }
 function showStudent(student) {
   if (['A', 'B', 'C'].includes(student.interface)) {
-    location.assign(`/learn/${student.interface.toLowerCase()}`);
+    location.assign('/learn');
     return;
   }
   form.hidden = true;
   authenticated.hidden = false;
   password.value = '';
   document.querySelector('#student-info').textContent = `${student.classroom} 班・${student.seat} 號`;
-  document.querySelector('#assignment-info').textContent = student.interface
-    ? `你被分配到 ${student.interface} 學習介面，教學內容尚未開放。`
-    : '尚未分配學習介面，請等候老師設定。';
+  document.querySelector('#assignment-info').textContent = '學習活動尚未開放，請等候老師設定。';
   logout.focus();
 }
 async function api(path, body) {

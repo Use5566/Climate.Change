@@ -57,23 +57,26 @@ Google Sheets API 必須在服務帳戶所屬專案啟用。請將這份表格�
 
 ### 科學教材與 Gemini 明確快取
 
-教材為 UTF-8 TXT，與 A/B prompt 分開保存，不放入公開 GitHub 或 dist/。本機可放在 private/science-knowledge.txt；Render 則以 Secret File 保存 science-knowledge.txt，再設定：
+教材固定放在 prompts/science-knowledge.txt（UTF-8 TXT），已經教師授權公開，與程式一起提交 GitHub 並部署到 Render。與 A/B 教學指令、C 閱讀文章分開保存，不須教材 Secret File，也不需要設定教材路徑。設定：
 
 | 環境變數 | 值 |
 |---|---|
 | GEMINI_KNOWLEDGE_MODE | explicit |
-| GEMINI_KNOWLEDGE_PATH | /etc/secrets/science-knowledge.txt |
 | GEMINI_CACHE_TTL_SECONDS | 3600 |
 
-既有 GEMINI_API_KEY、GEMINI_MODEL 繼續使用。未設定教材模式與路徑時維持原本對話；設定 explicit 後若教材缺失、配額不足或快取失敗，就提示錯誤，不會退回沒有教材的回答。TTL 可設 300–14400 秒，預設一小時，到期不在背景續期；下次提問才重建。教材檔上限 2 MB，建立前以 countTokens 確認實際用量，並依模型 inputTokenLimit 預留 32,768 tokens 給對話。
+既有 GEMINI_API_KEY、GEMINI_MODEL 繼續使用。未設定教材模式且沒有舊路徑變數時維持原本對話；設定 explicit 後若教材缺失、配額不足或快取失敗，就提示錯誤，不會退回沒有教材的回答。TTL 可設 300–14400 秒，預設一小時，到期不在背景續期；下次提問才重建。教材檔上限 2 MB，建立前以 countTokens 確認實際用量，並依模型 inputTokenLimit 預留 32,768 tokens 給對話。
+
+舊部署遷移：保留 GEMINI_KNOWLEDGE_MODE=explicit，GEMINI_KNOWLEDGE_PATH 可移除。新版永遠讀取 prompts/science-knowledge.txt，舊路徑值不再決定教材來源；即使尚未移除舊變數，也不會讀取舊教材。為相容舊的僅設定路徑部署，未設定模式但存在舊路徑變數時仍啟用快取；明確設定 off 則停用。舊 science-knowledge.txt Secret File 可留存備份但不再使用，Google 試算表 JSON 憑證仍須保留。
+
+修改教材請更新 prompts/science-knowledge.txt 並重新部署；課前命令與學生對話使用相同檔案來源，不依賴啟動時的工作目錄。
 
 A/B 各建立一份「完整教材＋本組教學指令」快取；學生立場、問題、對話不會進入共用快取。快取依模型、教材內容雜湊與指令版本識別，程序重啟時會搜尋可重用的快取，避免每位學生各建立一份。修改教材或 prompt 後舊快取仍會存到原到期時間；不自動刪除可能仍被處理中的請求使用的快取。不要把快取當成永久教材備份。
 
 教師可在已設定上述環境變數的後端執行 `python -m backend.knowledge_cache`，在上課前先建立／重用 A、B 快取。此命令會呼叫付費快取 API，僅顯示教材雜湊、token 數（API 有提供時）、模型及到期時間，不顯示教材與金鑰。未預先準備時，第一題可能較慢；A/B 前台等候上限調整為 180 秒。
 
-每則 AI 回覆的系統恢復資料保存 knowledge_sha256、cache_fingerprint 與 token_usage（輸入、快取、回答、思考、總量，依 API 回傳）。沿用 11 欄，放在 K 欄備註內，不把教材全文複製進試算表。這是成功保留回覆的用量，不等同完整帳單：失敗請求、快取儲存與預先建立等費用仍以 Google 帳單為準。模型被要求引用教材來源／章節，但來源正確性與教學品質仍須真實問答驗證。
+每則 AI 回覆的系統恢復資料保存 knowledge_sha256、cache_fingerprint 與 token_usage（輸入、快取、回答、思考、總量，依 API 回傳）。使用目前 10 欄配置，放在 I 欄推論的備註內，不把教材全文複製進試算表。這是成功保留回覆的用量，不等同完整帳單：失敗請求、快取儲存與預先建立等費用仍以 Google 帳單為準。模型被要求引用教材來源／章節，但來源正確性與教學品質仍須真實問答驗證。
 
-本次已完成模擬測試；實際教材 token 數、帳號的快取支援、配額與回答品質須在私密教材及金鑰可用後確認。官方參考：https://ai.google.dev/api/caching 。
+本次已完成模擬測試；實際教材 token 數、帳號的快取支援、配額與回答品質須在教材及私密金鑰可用後確認。官方參考：https://ai.google.dev/api/caching 。
 
 ### Google 試算表憑證
 
