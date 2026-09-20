@@ -71,6 +71,14 @@ function renderArticle() {
     const marks = work.highlights.filter(h => h.p === p);
     let position = 0;
     for (const part of paragraph.parts) {
+      let container = element;
+      if (part.heading === 1 || part.heading === 2) {
+        container = document.createElement('span');
+        container.className = `article-heading article-heading-${part.heading}`;
+        container.setAttribute('role', 'heading');
+        container.setAttribute('aria-level', String(part.heading + 1));
+        element.append(container);
+      }
       const length = Array.from(part.text).length;
       const boundaries = new Set([position, position+length]);
       for (const h of marks) {
@@ -83,7 +91,7 @@ function renderArticle() {
         let node = document.createTextNode(excerpt(paragraph.text,start,end));
         if (part.bold) { const strong=document.createElement('strong'); strong.append(node); node=strong; }
         if (marks.some(h => h.start <= start && h.end >= end)) { const mark=document.createElement('mark'); mark.append(node); node=mark; }
-        element.append(node);
+        container.append(node);
       }
       position += length;
     }

@@ -6,6 +6,21 @@ from tests.test_learning import draft, login, HEADERS, ROWS
 from tests.test_buffered_learning import GoogleFake, store_for
 
 
+def test_two_heading_levels_preserve_saved_highlight_positions(tmp_path):
+    path = tmp_path / 'article.txt'
+    original = '文章標題\n第一個小標題\n\n內文**證據**與數字 32°C。\n\n第二個小標題\n\n第二段。'
+    path.write_text(original, encoding='utf-8')
+    before = article.load_article(path)
+    formatted = original.replace('文章標題', '# 文章標題').replace('第一個小標題', '## 第一個小標題').replace('第二個小標題', '## 第二個小標題')
+    path.write_text(formatted, encoding='utf-8')
+    after = article.load_article(path)
+    assert [p['text'] for p in after['paragraphs']] == [p['text'] for p in before['paragraphs']]
+    assert after['paragraphs'][0]['parts'][0]['heading'] == 1
+    assert after['paragraphs'][0]['parts'][1]['heading'] == 2
+    assert after['paragraphs'][2]['parts'][0]['heading'] == 2
+    assert after['paragraphs'][1] == before['paragraphs'][1]
+
+
 def test_utf8_bom_paragraphs_bold_literal_html_and_stable_newlines(tmp_path):
     path = tmp_path / 'article.txt'
     text = '第一段**重點**。\n段內換行。\n\n第二段<script>文字</script>。'

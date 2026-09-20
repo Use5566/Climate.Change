@@ -17,9 +17,23 @@ def load_article(path):
             raise ValueError('empty article')
         paragraphs = []
         for block in re.split(r'\n[ \t]*\n+', source):
-            parts = block.strip().split('**')
-            paragraphs.append({'text': ''.join(parts), 'parts': [
-                {'text': text, 'bold': bool(i % 2)} for i, text in enumerate(parts)]})
+            if not re.search(r'^#{1,2}[ \t]+', block.strip(), re.M):
+                texts = block.strip().split('**')
+                paragraphs.append({'text': ''.join(texts), 'parts': [
+                    {'text': text, 'bold': bool(i % 2)} for i, text in enumerate(texts)]})
+                continue
+            parts = []
+            # Preserve paragraph indexes and newlines for saved highlight offsets.
+            for line in block.strip().splitlines(keepends=True):
+                heading = re.match(r'^(#{1,2})[ \t]+', line)
+                level = len(heading[1]) if heading else None
+                content = line[heading.end():] if heading else line
+                for i, text in enumerate(content.split('**')):
+                    part = {'text': text, 'bold': bool(i % 2)}
+                    if level:
+                        part['heading'] = level
+                    parts.append(part)
+            paragraphs.append({'text': ''.join(p['text'] for p in parts), 'parts': parts})
         # Leave room in Sheets recovery notes for inference and highlights.
         if sum(len(p['text'].encode('utf-16-le')) // 2 for p in paragraphs) > 20000:
             raise ValueError('article exceeds recovery capacity')

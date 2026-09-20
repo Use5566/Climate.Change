@@ -4,3 +4,8 @@ body.inference-copy-locked textarea,body.inference-copy-locked input{user-select
 
 .stance-view h1{max-width:1000px;margin:8px auto 18px;font-size:clamp(24px,2.6vw,32px)}
 .stance-examples{max-width:800px;margin:0 auto 12px;text-align:left;font-size:20px;line-height:1.8}.stance-examples p{margin:0 0 6px}.stance-examples ol{margin:0;padding-left:1.8em}.stance-examples li{padding:2px 0}
+
+/* Two-level article headings retain selectable text and paragraph indexes. */
+#article .article-heading{display:block;font-weight:700;line-height:1.6;color:#172b4b}
+#article .article-heading-1{font-size:30px;margin-bottom:18px}
+#article .article-heading-2{font-size:25px;margin-bottom:10px;color:#1945c4}
