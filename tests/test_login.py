@@ -68,6 +68,20 @@ def test_interface_header_matches_live_sheet():
     assert login(client).status_code == 200
 
 
+@pytest.mark.parametrize('group', ['A', 'B', 'C'])
+def test_five_column_roster_with_timestamp(group):
+    rows = [['紀錄時間', '班級', '座號', '密碼', '介面'],
+            ['', '601', '01', '01234', group]]
+    client = client_for(rows)
+    response = login(client)
+    assert response.status_code == 200
+    assert response.json()['student']['interface'] == group
+    assert '01234' not in response.text
+    assert login(client, '99999').status_code == 401
+    rows[0][3] = '推論'
+    assert login(client).status_code == 503
+
+
 def test_password_change_revokes_session_and_group_refreshes():
     rows = [HEADER, ['601','01','01234','A']]
     client = client_for(rows)

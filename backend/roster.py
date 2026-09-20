@@ -44,8 +44,8 @@ class Roster:
 
     def _parse(self, rows):
         headers = [str(x).strip().replace('级', '級') for x in rows[0]] if rows else []
-        offset = 1 if len(headers) == 11 else 0
-        if (len(headers) not in (4, 11) or headers[offset:offset+3] != ['班級', '座號', '密碼']
+        offset = 1 if len(headers) in (5, 11) else 0
+        if (len(headers) not in (4, 5, 11) or headers[offset:offset+3] != ['班級', '座號', '密碼']
                 or headers[offset+3] not in ('介面', '學習介面')):
             raise RosterUnavailable('INVALID_HEADERS')
         result = {}
