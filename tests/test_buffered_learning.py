@@ -98,8 +98,7 @@ def test_failed_submission_never_reports_success_and_retry_is_idempotent():
     assert result['submitted_at']
     assert len(google.rows['C']) == 1
     assert store.read('601', '01') == result
-    with pytest.raises(Conflict):
-        store.save('601', '01', draft(revision=2))
+    assert store.save('601', '01', draft(revision=2))['submitted_at'] is None
 
 
 def test_interrupted_process_restores_last_confirmed_snapshot():

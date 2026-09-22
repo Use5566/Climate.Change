@@ -59,8 +59,7 @@ def test_lost_response_retry_does_not_duplicate():
     assert store.save('601', '01', data, True)['submitted_at']
     assert len(store.rows) == 2
     assert store.rows[1][7]['effectiveValue']['stringValue'] == '已提交'
-    with pytest.raises(Conflict):
-        store.save('601', '01', draft(revision=2))
+    assert store.save('601', '01', draft(revision=2))['submitted_at'] is None
 
 
 def test_never_overwrite_roster_tab():

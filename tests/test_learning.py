@@ -48,7 +48,7 @@ def test_durable_draft_submission_and_isolation(tmp_path):
     submitted=c.post('/api/c/submit',headers=HEADERS,json=payload)
     assert submitted.status_code==200 and submitted.json()['work']['submitted_at']
     assert c.post('/api/c/submit',headers=HEADERS,json=payload).json()==submitted.json()
-    assert c.post('/api/c/draft',headers=HEADERS,json=draft(revision=2)).status_code==409
+    assert c.post('/api/c/draft',headers=HEADERS,json=draft(revision=2)).json()['work']['submitted_at'] is None
     login(c,'02')
     assert c.get('/api/c/work').json()['work'] is None
 

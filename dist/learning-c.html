@@ -29,10 +29,10 @@
       <div class="section-heading"><div><p class="eyebrow">整理我的想法</p><h1 id="summary-title" tabindex="-1">摘要與推論</h1></div><button id="back-reading" class="secondary small">返回文章調整劃記</button></div>
       <p class="muted">請用自己的話撰寫推論。本頁不提供複製、剪下或拖曳複製。</p>
       <section class="summary-block"><h2>我的立場</h2><span class="stance-chip"></span></section>
-      <section class="summary-block"><h2>我的摘要</h2><p class="muted">依文章順序，整理你劃記的文字。</p><ol id="summary-list"></ol><p id="empty-summary" class="muted" hidden>你還沒有劃記文字，可以返回文章補充。</p></section>
-      <form id="inference-form"><label for="inference">推論</label><textarea id="inference" rows="7" maxlength="10000" required placeholder="請寫下你的推論。"></textarea><div class="submit-row"><span class="muted">提交後，這次的學習紀錄將保存。</span><button id="submit-work" type="submit">提交</button></div></form>
+      <section class="summary-block"><h2>我的摘要</h2><p class="muted">依文章順序，整理你劃記的文字。</p><p class="muted">不需要的句子可以直接按「刪除」，原文中的劃記也會一併取消。</p><ol id="summary-list"></ol><p id="empty-summary" class="muted" hidden>你還沒有劃記文字，可以返回文章補充。</p></section>
+      <form id="inference-form"><label for="inference">推論</label><textarea id="inference" rows="7" maxlength="10000" required placeholder="請寫下你的推論。"></textarea><div class="submit-row"><span class="muted">提交後會保存紀錄；再次登入仍可修改並重新提交。</span><button id="submit-work" type="submit">提交</button></div></form>
     </section>
-    <section id="complete-view" class="complete-view" hidden aria-labelledby="complete-title"><span class="completion-symbol" aria-hidden="true">✓</span><h1 id="complete-title" tabindex="-1">已完成提交</h1><p>你的立場、劃記與推論已儲存。</p><p id="receipt" class="muted"></p><button id="finish-logout">登出</button></section>
+    <section id="complete-view" class="complete-view" hidden aria-labelledby="complete-title"><span class="completion-symbol" aria-hidden="true">✓</span><h1 id="complete-title" tabindex="-1">已完成提交</h1><p>你的立場、劃記與推論已儲存。</p><p>登出後再次登入，可以繼續修改並重新提交。</p><p id="receipt" class="muted"></p><button id="finish-logout">登出</button></section>
   </main>
   <script type="module" src="/learning-c.js"></script>
 </body>

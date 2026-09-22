@@ -164,7 +164,7 @@ class ChatService:
                 clean = {k: data.get(k) for k in ('article_id', 'revision', 'stance', 'stage', 'highlights', 'inference')}
                 clean['messages'] = old.get('messages', []) if old else []
                 return store.save(classroom, seat, clean, action == 'submit')
-            if not old or old.get('submitted_at') or old['stage'] != 'reading':
+            if not old or old['stage'] != 'reading':
                 raise Conflict('請先選擇立場並進入對話頁面。')
             request_id, text = data.get('request_id'), data.get('text')
             if not isinstance(request_id, str) or not re.fullmatch(r'[a-f0-9-]{36}', request_id):

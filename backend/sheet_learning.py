@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
 from .article import ARTICLE_ID, article_for_work
-from .learning import validated, InvalidWork, Conflict, check_highlight_limit, validated_c
+from .learning import validated, InvalidWork, Conflict, check_highlight_limit, validated_c, submission_state, submission_label
 from .roster import SERVICE_ACCOUNT, SPREADSHEET_ID
 
 TAB = 'C學習歷程'
@@ -128,10 +128,8 @@ class SheetLearningStore:
             if submit and (clean['stage'] != 'summary' or not clean['inference'].strip()):
                 raise InvalidWork('請填寫推論後再提交。')
             same = old is not None and all(old.get(k) == v for k, v in clean.items())
-            if old and old['submitted_at']:
-                if submit and same:
-                    return old
-                raise Conflict('這份學習紀錄已提交，不能再修改。')
+            if old and old['submitted_at'] and submit and same and revision == old['revision'] - 1:
+                return old
             if (old['revision'] if old else 0) != revision:
                 if old and old['revision'] == revision + 1 and same and not submit:
                     return old
@@ -140,9 +138,9 @@ class SheetLearningStore:
             stamp = now.isoformat()
             work = {**clean, 'attempt_id': old['attempt_id'] if old else str(uuid.uuid4()),
                     'revision': revision + 1, 'started_at': old['started_at'] if old else stamp,
-                    'updated_at': stamp, 'submitted_at': stamp if submit else None}
+                    'updated_at': stamp, **submission_state(old, clean, submit, stamp)}
             row = [now.astimezone(timezone(timedelta(hours=8))).isoformat(), classroom, seat,
-                   '', self.interface, '', clean['stance'], '已提交' if submit else '草稿',
+                   '', self.interface, '', clean['stance'], submission_label(work),
                    '\n'.join(clean['highlight_texts']),
                    '\n\n'.join(('學生：' if m['role'] == 'user' else 'AI：') + m['text']
                                for m in clean.get('messages', [])), clean['inference']]

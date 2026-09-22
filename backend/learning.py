@@ -75,6 +75,22 @@ def validated_c(data, previous=None):
     return clean
 
 
+def submission_state(old, clean, submit, stamp):
+    """Navigation does not revoke submission; only changes to student content do."""
+    old = old or {}
+    last = old.get('last_submitted_at') or old.get('submitted_at')
+    edited = any(old.get(k) != clean.get(k) for k in
+                 ('stance', 'highlights', 'inference', 'messages'))
+    submitted = stamp if submit else (None if edited else old.get('submitted_at'))
+    return {'submitted_at': submitted,
+            'last_submitted_at': stamp if submit else last}
+
+
+def submission_label(work):
+    return ('已提交' if work.get('submitted_at') else
+            '修改中（待重新提交）' if work.get('last_submitted_at') else '草稿')
+
+
 class LearningStore:
     def __init__(self, path=None):
         configured = path or os.getenv('LEARNING_DB_PATH')
@@ -122,21 +138,23 @@ class LearningStore:
             check_highlight_limit(clean)
             if submit and (clean['stage'] != 'summary' or not clean['inference'].strip()):
                 raise InvalidWork('請填寫推論後再提交。')
-            if row and row['submitted_at']:
-                if submit and json.loads(row['payload']) == clean:
-                    return self.result(row)  # A retry after a lost response is idempotent.
-                raise Conflict('這份學習紀錄已提交，不能再修改。')
+            old = self.result(row) if row else None
+            same = old is not None and all(old.get(k) == v for k, v in clean.items())
+            if old and old['submitted_at'] and submit and same and revision == old['revision'] - 1:
+                return old  # A retry after a lost response is idempotent.
             if (row['revision'] if row else 0) != revision:
-                if row and row['revision'] == revision + 1 and json.loads(row['payload']) == clean and not submit:
+                if row and row['revision'] == revision + 1 and same and not submit:
                     return self.result(row)
                 raise Conflict('另一個頁面已更新草稿。請先保留推論文字，再重新整理。')
+            state = submission_state(old, clean, submit, now)
+            clean['last_submitted_at'] = state['last_submitted_at']
             db.execute('''INSERT INTO c_work VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(classroom, seat, article_id) DO UPDATE SET
                 payload=excluded.payload, revision=excluded.revision,
                 updated_at=excluded.updated_at, submitted_at=excluded.submitted_at''',
                 (classroom, seat, clean['article_id'], row['attempt_id'] if row else str(uuid.uuid4()),
                  json.dumps(clean, ensure_ascii=False), revision + 1,
-                 row['started_at'] if row else now, now, now if submit else None))
+                 row['started_at'] if row else now, now, state['submitted_at']))
             saved = db.execute('SELECT * FROM c_work WHERE classroom=? AND seat=? AND article_id=?',
                                (classroom, seat, clean['article_id'])).fetchone()
             return self.result(saved)

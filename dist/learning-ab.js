@@ -29,20 +29,23 @@ function payload() {
 function save() {
   clearTimeout(timer);
   const operation = queue.then(async () => {
-    if (changes === savedChanges || work.submitted_at) return;
+    if (changes === savedChanges) return;
     const generation = changes;
     $('#save-status').textContent = '儲存中…';
     const result = await api(`/api/${group}/draft`, payload());
+    work.submitted_at = result.work.submitted_at;
+    work.last_submitted_at = result.work.last_submitted_at;
     work.revision = result.work.revision;
     work.attempt_id = result.work.attempt_id;
     savedChanges = generation;
-    $('#save-status').textContent = '已暫存，等待每 35 秒同步';
+    $('#save-status').textContent = (work.last_submitted_at && !work.submitted_at ? '修改中（待重新提交），' : '') + '已暫存，等待每 35 秒同步';
     error('');
   });
   queue = operation.catch(e => { $('#save-status').textContent = '尚未儲存'; error(e.message); });
   return operation;
 }
 function changed() {
+  if (work.submitted_at) work.last_submitted_at = work.submitted_at;
   changes++;
   $('#save-status').textContent = '尚未儲存';
   clearTimeout(timer);
@@ -162,8 +165,23 @@ $('#reading-done').addEventListener('click',async () => {
 });
 $('#back-reading').addEventListener('click',() => {work.stage='reading'; changed(); show('reading');});
 function renderSummary() {
-  $('#summary-list').replaceChildren(...work.highlights.map(h => {
-    const li=document.createElement('li'); li.textContent=excerpt(article.paragraphs[h.p].text,h.start,h.end); return li;
+  $('#summary-list').replaceChildren(...work.highlights.map((h,index) => {
+    const li=document.createElement('li');
+    const row=document.createElement('div'); row.className='summary-item';
+    const quote=document.createElement('span'); quote.className='summary-quote';
+    quote.textContent=excerpt(article.paragraphs[h.p].text,h.start,h.end);
+    const button=document.createElement('button');
+    button.type='button'; button.className='secondary small remove-highlight';
+    button.textContent='刪除'; button.setAttribute('aria-label',`刪除第 ${index+1} 段劃記`);
+    button.disabled=submitting;
+    button.addEventListener('click',() => {
+      if (submitting) return;
+      work.highlights=work.highlights.filter(mark => mark !== h);
+      renderSummary(); changed();
+      const buttons=$('#summary-list').querySelectorAll('.remove-highlight');
+      (buttons[Math.min(index,buttons.length-1)] || $('#inference')).focus({preventScroll:true});
+    });
+    row.append(quote,button); li.append(row); return li;
   }));
   $('#empty-summary').hidden=work.highlights.length>0;
   $('#inference').value=work.inference;
@@ -176,13 +194,14 @@ $('#inference-form').addEventListener('submit',async e => {
   if (submitting) return;
   if (!work.inference.trim()) {$('#inference').setCustomValidity('請填寫你的推論，不能只有空白。'); $('#inference').reportValidity(); return;}
   submitting=true; $('#submit-work').disabled=true; $('#inference').disabled=true; $('#back-reading').disabled=true;
+  $('#summary-list').querySelectorAll('.remove-highlight').forEach(button => {button.disabled=true;});
   $('#submit-work').textContent='提交中…';
   try {
     await save();
     const result=await api(`/api/${group}/submit`,payload());
     work=result.work; error(''); show('complete');
   } catch(e) {error(e.message);}
-  finally {submitting=false; $('#submit-work').disabled=false; $('#inference').disabled=false; $('#back-reading').disabled=false; $('#submit-work').textContent='提交';}
+  finally {submitting=false; $('#summary-list').querySelectorAll('.remove-highlight').forEach(button => {button.disabled=false;}); $('#submit-work').disabled=false; $('#inference').disabled=false; $('#back-reading').disabled=false; $('#submit-work').textContent='提交';}
 });
 $('#finish-logout').addEventListener('click',async () => {
   try {await api('/api/logout',{}); location.assign('/');} catch(e) {error(e.message);}
@@ -195,9 +214,10 @@ async function load() {
     if (!['a','b'].includes(group)) {location.assign('/learn'); return;}
     const data=await api(`/api/${group}/work`); article=data.article; student=data.student;
     work=data.work || {messages:[],stance:null,stage:'stance',highlights:[],inference:'',revision:0,submitted_at:null};
+    if (work.submitted_at) work.stage='summary';
     $('#identity').textContent=`${student.classroom} 班・${student.seat} 號`;
     $('#save-status').textContent=data.work ? '正在確認同步狀態…' : '尚未開始';
-    syncArticle(); $('#main').hidden=false; show(work.submitted_at ? 'complete' : work.stage,false);
+    syncArticle(); $('#main').hidden=false; show(work.submitted_at ? 'summary' : work.stage,false);
   } catch(e) {error(e.message);}
   finally {$('#loading').hidden=true;}
 }
@@ -255,22 +275,22 @@ $('#chat-form').addEventListener('submit',async e=>{
 });
 let syncChecking = false;
 async function checkSync() {
-  if (!work || work.submitted_at || syncChecking || submitting) return;
+  if (!work || !views.complete.hidden || syncChecking || submitting) return;
   syncChecking = true;
   const revision = work.revision;
   try {
     const status = await api('/api/' + group + '/sync');
-    if (work.submitted_at || submitting || revision !== work.revision) return;
+    if (!views.complete.hidden || submitting || revision !== work.revision) return;
     if (changes !== savedChanges) {
       $('#save-status').textContent = '尚有變更未暫存';
       save().catch(() => {});
     } else if (status.failed) {
       $('#save-status').textContent = 'Google 同步延遲，已暫存並將自動重試';
     } else if (status.pending) {
-      $('#save-status').textContent = '已暫存，等待每 35 秒同步';
+      $('#save-status').textContent = (work.last_submitted_at && !work.submitted_at ? '修改中（待重新提交），' : '') + '已暫存，等待每 35 秒同步';
     } else {
       $('#save-status').textContent = status.saved_at
-        ? '已同步 Google：' + new Date(status.saved_at).toLocaleTimeString('zh-TW')
+        ? (work.submitted_at ? '已提交；' : work.last_submitted_at ? '修改中（待重新提交）；' : '') + '已同步 Google：' + new Date(status.saved_at).toLocaleTimeString('zh-TW')
         : '尚未開始';
     }
   } catch {
